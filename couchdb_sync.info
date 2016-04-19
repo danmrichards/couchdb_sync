@@ -1,0 +1,10 @@
+name = CouchDB Sync
+description = Provides a mechanism for syncing entities to CouchDB.
+package = Couchdb
+core = 7.x
+
+dependencies[] = couchdb
+dependencies[] = ctools
+dependencies[] = entity
+
+files[] = tests/couchdb_sync.test

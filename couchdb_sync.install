@@ -1,0 +1,109 @@
+<?php
+
+/**
+ * @file
+ * Install/uninstall functions for the CouchDB Sync module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function couchdb_sync_schema() {
+  $schema = array();
+
+  $schema['couchdb_sync_rev'] = array(
+    'description' => 'Stores CouchDB MVCC revision tokens against Drupal entity IDs and types.',
+    'fields' => array(
+      'entity_id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The ID of the entity that the CouchDB revision token applies to.',
+      ),
+      'type' => array(
+        'description' => 'The type of entity that the CouchDB revision token applies to.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+      'rev' => array(
+        'type' => 'char',
+        'length' => 36,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The CouchDB MVCC revision token.',
+      ),
+    ),
+    'indexes' => array(
+      'entity_type_rev' => array('entity_id', 'type', 'rev'),
+    ),
+    'unique keys' => array(
+      'entityid_type' => array('entity_id', 'type'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function couchdb_sync_install() {
+  couchdb_sync_create_database();
+}
+
+/**
+ * Create the database for this site in CouchDB.
+ */
+function couchdb_sync_create_database() {
+  // Create the database for this site in CouchDB.
+  $couch = new CouchDB();
+  $result = $couch->createDatabase(couchdb_sync_get_database_name());
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function couchdb_sync_requirements($phase) {
+  $requirements = array();
+  $t = get_t();
+
+  // Ensure the CouchDB connection is available on install and at runtime.
+  if ($phase == 'install' || $phase == 'runtime') {
+    $couch_vars = variable_get('couchdb', FALSE);
+    if (!$couch_vars) {
+      $requirements['couchdb_sync'] = array(
+        'severity' => REQUIREMENT_ERROR,
+        'title' => $t('CouchDB Sync'),
+        'description' => $t('CouchDB Sync cannot be installed. CouchDB connection setting not set. CouchDB cannot be reached. Make sure the $conf[\'couchdb\'] variable is set in settings.php.'),
+      );
+    }
+  }
+
+  // Ensure the CouchDB connection is working at runtime.
+  if ($phase == 'runtime') {
+    try {
+      $couch = new CouchDB();
+    }
+    catch (Exception $e) {
+      $requirements['couchdb_sync']['severity'] = REQUIREMENT_ERROR;
+      $requirements['couchdb_sync']['title'] = $t('CouchDB Sync');
+      $requirements['couchdb_sync']['value'] = $t('CouchDB connection setting not set. CouchDB cannot be reached. Make sure the $conf[\'couchdb\'] variable is set in settings.php.');
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function couchdb_sync_uninstall() {
+  drupal_load('module', 'couchdb_sync');
+
+  // Remove the database for this site from CouchDB.
+  $couch = new CouchDB();
+  $couch->deleteDatabase(couchdb_sync_get_database_name());
+}

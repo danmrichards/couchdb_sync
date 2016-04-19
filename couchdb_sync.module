@@ -1,0 +1,587 @@
+<?php
+
+/**
+ * @file
+ * Main hooks and functionality for the CouchDB Sync module.
+ */
+
+// TODO: Implement an admin UI for entity enablement, push mode etc.
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function couchdb_sync_cron_queue_info() {
+  $queues = array();
+
+  $queues['couchdb_sync_push_entity'] = array(
+    'worker callback' => 'couchdb_sync_push_entity_worker',
+    'time' => 60,
+    'skip on cron' => FALSE,
+  );
+
+  return $queues;
+}
+
+/**
+ * Cron queue worker: Push an entity into CouchDB.
+ *
+ * @param array $queue_item
+ *   An array describing the entity to push to CouchDB. Expected format:
+ *     array(
+ *       'id' => The Drupal ID of the entity.
+ *       'vid' => The Drupal revision ID of the entity.
+ *       'type' => The type of entity that is being pushed.
+ *       'op' => The operation to perform ('insert', 'update,' 'delete').
+ *     ).
+ */
+function couchdb_sync_push_entity_worker(array $queue_item) {
+  // Check we valid queue item data.
+  if (isset($queue_item['id']) && isset($queue_item['vid']) && isset($queue_item['type']) && isset($queue_item['op'])) {
+    // Determine the action to take based on the operation value.
+    switch ($queue_item['op']) {
+      case 'insert':
+      case 'update':
+        // Load the entity.
+        $entity = entity_revision_load($queue_item['type'], $queue_item['vid']);
+
+        // If this is an update, allow for the fact that the entity may have
+        // been created before this module existed. If we have no revision
+        // token, do an insert instead.
+        if (!couchdb_sync_get_entity_couchdb_rev($queue_item['type'], $queue_item['id'])) {
+          $queue_item['op'] = 'insert';
+        }
+
+        // Get the flattened version of the entity.
+        if ($flat_entity = _couchdb_sync_flatten_entity($queue_item['type'], $entity)) {
+          // Build the callback function name.
+          $callback = 'couchdb_sync_' . $queue_item['op'] . '_document';
+
+          // Run the callback function.
+          call_user_func($callback, $queue_item['type'], $flat_entity);
+        }
+
+        break;
+
+      case 'delete':
+        couchdb_sync_delete_document($queue_item['type'], $queue_item['id']);
+        break;
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+function couchdb_sync_entity_insert($entity, $type) {
+  // TODO: Implement permissions check to verify if it is safe to push the
+  // entity to CouchDB. Effectively exposing it to anonymous users.
+  // TODO: Perform additional checking against list of enabled entities for
+  // push to CouchDB. For now lets just use nodes.
+  // TODO: Implement hook system for agnostic entity status checking.
+  // i.e. Should the entity be pushed to CouchDB? For example nodes should not
+  // be pushed if they are unpublished.
+  if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
+    // Push the entity to the queue.
+    // TODO: Add config option to push immediately instead of using queue.
+    _couchdb_sync_create_queue_item($entity, $type, 'insert');
+  }
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+function couchdb_sync_entity_update($entity, $type) {
+  // TODO: Implement permissions check to verify if it is safe to push the
+  // entity to CouchDB. Effectively exposing it to anonymous users.
+  // TODO: Perform additional checking against list of enabled entities for
+  // push to CouchDB. For now lets just use nodes.
+  // TODO: Implement hook system for agnostic entity status checking.
+  // i.e. Should the entity be pushed to CouchDB? For example nodes should not
+  // be pushed if they are unpublished.
+  if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
+    // Push the entity to the queue.
+    // TODO: Check config option to push immediately instead of using queue.
+    _couchdb_sync_create_queue_item($entity, $type, 'update');
+  }
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function couchdb_sync_entity_delete($entity, $type) {
+  // TODO: Perform additional checking against list of enabled entities for
+  // push to CouchDB. For now lets just use nodes.
+  if ($type == 'node') {
+    // Push the entity to the queue.
+    // TODO: Check config option to push immediately instead of using queue.
+    _couchdb_sync_create_queue_item($entity, $type, 'delete');
+  }
+}
+
+/**
+ * Push an entity into the CouchDB queue.
+ *
+ * @param object $entity
+ *   The entity object.
+ * @param string $type
+ *   The type of entity being saved (i.e. node, user, comment).
+ * @param string $op
+ *   The operation that needs to be performed in CouchDB.
+ */
+function _couchdb_sync_create_queue_item($entity, $type, $op) {
+  // Get the entity info.
+  list($id, $vid) = entity_extract_ids($type, $entity);
+
+  // Build the queue item.
+  $queue_item = array(
+    'id' => $id,
+    'vid' => $vid,
+    'type' => $type,
+    'op' => $op,
+  );
+
+  // Load the CouchDB Sync.
+  $queue = DrupalQueue::get('couchdb_sync_push_entity');
+
+  // Push the item into the queue and check it was successful.
+  if (!$queue->createItem($queue_item)) {
+    watchdog('couchdb_sync', 'Could not push %type entity with an ID of %id to the CouchDB queue for the following operation: %op', array(
+      '%type' => $type,
+      '%id' => $id,
+      '%op' => $op,
+    ), WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * Return a database name for use with CouchDB.
+ *
+ * By default this is a machine friendly version of the site name. However
+ * this can be overridden by a variable if required.
+ *
+ * @return string
+ *   CouchDB database name.
+ */
+function couchdb_sync_get_database_name() {
+  // Check for an override database name variable.
+  if (!variable_get('couchdb_sync_database_name', FALSE)) {
+    // No override so use the site name.
+    global $base_url;
+
+    // Get the base URL info.
+    $base_url_info = parse_url($base_url);
+
+    // Make use of the CTools cleanstring implementation.
+    ctools_include('cleanstring');
+
+    // Build some custom settings for the string cleaning.
+    $settings = array(
+      'clean slash' => TRUE,
+      'separator' => '_',
+      'lower case' => TRUE,
+    );
+
+    $db_name = ctools_cleanstring($base_url_info['host'], $settings);
+  }
+  else {
+    // Use the .
+    $db_name = variable_get('couchdb_sync_database_name', FALSE);
+  }
+
+  return $db_name;
+}
+
+/**
+ * Insert a flattened Drupal entity into CouchDB.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param object $flat_entity
+ *   A flattened Drupal entity.
+ */
+function couchdb_sync_insert_document($type, $flat_entity) {
+  // Allow other modules to act on the document being inserted.
+  module_invoke_all('couchdb_sync_pre_insert_document', $type, $flat_entity);
+
+  try {
+    // Connect to the database.
+    $couch = new CouchDB();
+    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+
+    // Insert the document and update the revision token.
+    $result = $database->storeDocument($type . '_' . $flat_entity->id, $flat_entity);
+    couchdb_sync_set_entity_couchdb_rev($type, $flat_entity->id, $result->rev, TRUE);
+  }
+  catch (Exception $e) {
+    // The insert failed, so log the error.
+    watchdog('couchdb_sync', 'Document insert failed for entity (type: %type, id: %id). Reason: @reason.', array(
+      '%type' => $type,
+      '%id' => $flat_entity->id,
+      '@reason' => $e->getMessage(),
+    ), WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * Update a CouchDB document with new data from a flattened Drupal entity.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param object $flat_entity
+ *   A flattened Drupal entity.
+ */
+function couchdb_sync_update_document($type, $flat_entity) {
+  // Allow other modules to act on the document being inserted.
+  module_invoke_all('couchdb_sync_pre_update_document', $type, $flat_entity);
+
+  try {
+    // Connect to the database.
+    $couch = new CouchDB();
+    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+
+    // Insert the document and update the revision token.
+    $result = $database->storeDocument($type . '_' . $flat_entity->id, $flat_entity);
+    couchdb_sync_set_entity_couchdb_rev($type, $flat_entity->id, $result->rev);
+  }
+  catch (Exception $e) {
+    // The insert failed, so log the error.
+    watchdog('couchdb_sync', 'Document update failed for entity (type: %type, id: %id). Reason: @reason.', array(
+      '%type' => $type,
+      '%id' => $flat_entity->id,
+      '@reason' => $e->getMessage(),
+    ), WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * Delete a document from CouchDB.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param int $id
+ *   The ID of the entity.
+ *
+ * @return bool
+ *   TRUE if the document was deleted otherwise FALSE.
+ */
+function couchdb_sync_delete_document($type, $id) {
+  // Allow other modules to act on the document being deleted.
+  module_invoke_all('couchdb_sync_pre_delete_document', $type, $id);
+
+  $return = FALSE;
+
+  try {
+    // Connect to the database.
+    $couch = new CouchDB();
+    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+
+    // Get the CouchDB revision token for this entity.
+    $rev = couchdb_sync_get_entity_couchdb_rev($type, $id);
+
+    // Attempt to delete the document with this ID.
+    $result = $database->deleteDocument($type . '_' . $id, $rev);
+
+    // Check the IDs match.
+    if (isset($result->ok) && $result->ok == TRUE) {
+      // Delete the CouchDB revision token.
+      couchdb_sync_delete_entity_couchdb_rev($type, $id);
+
+      $return = TRUE;
+    }
+  }
+  catch (Exception $e) {
+    // The insert failed, so log the error.
+    watchdog('couchdb_sync', 'Document delete failed for type: %type id: %id. Reason: @reason.', array(
+      '%type' => $type,
+      '%id' => $flat_entity->id,
+      '@reason' => $e->getMessage(),
+    ), WATCHDOG_ERROR);
+  }
+
+  return $return;
+}
+
+/**
+ * Get a document from CouchDB by ID.
+ *
+ * @param mixed $id
+ *   The ID of the document in CouchDB. Can be string or int.
+ *
+ * @return mixed
+ *   Document from CouchDB if present or FALSE.
+ */
+function couchdb_sync_get_document_by_id($id) {
+  $return = FALSE;
+
+  if (!is_null($id)) {
+    try {
+      // Connect to the database.
+      $couch = new CouchDB();
+      $database = $couch->getDatabase(couchdb_sync_get_database_name());
+
+      // Attempt to get a document with this ID.
+      $result = $database->getDocument($id);
+
+      // Check the IDs match.
+      if (isset($result->_id) && $result->_id == $id) {
+        $return = $result;
+      }
+    }
+    catch (Exception $e) {
+      // The insert failed, so log the error.
+      watchdog('couchdb_sync', 'Document get failed for id: %id. Reason: @reason.', array(
+        '%id' => $flat_entity->id,
+        '@reason' => $e->getMessage(),
+      ), WATCHDOG_ERROR);
+    }
+  }
+
+  return $return;
+}
+
+/**
+ * Flatten a Drupal entity for storage in CouchDB.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param object $entity
+ *   The raw Drupal entity.
+ *
+ * @return object
+ *   A 'flattened' version of the entity.
+ */
+function _couchdb_sync_flatten_entity($type, $entity) {
+  // TODO: Implement static caching.
+
+  // Get a list of valid entity types.
+  $entity_types = array_keys(entity_get_info());
+
+  // Load the entity wrapper.
+  $entity_wrapper = entity_metadata_wrapper($type, $entity);
+
+  // Build out the flat entity. Start with required fields.
+  $flat_entity = new stdClass();
+  $flat_entity->id = $entity_wrapper->getIdentifier();
+  $flat_entity->type = $type;
+  $flat_entity->title = $entity_wrapper->label();
+  $flat_entity->alias = drupal_get_path_alias($type . '/' . $flat_entity->id);
+
+  // Get the list of available fields.
+  $entity_fields = array_keys(field_info_instances($type, $entity_wrapper->getBundle()));
+
+  // TODO: Implement an extensible means of altering the list of fields. Either
+  // via a plugin system or some hook mechanism.
+  // Allow other modules to alter the list of fields.
+  drupal_alter('couchdb_sync_flatten_entity_fields', $entity_fields, $type, $entity);
+
+  // Parse the entity fields and produce a flattened key => value object.
+  foreach ($entity_fields as $field_name) {
+    // Check if the field is an entity reference.
+    if ($entity_wrapper->{$field_name} instanceof EntityDrupalWrapper) {
+      // Check we have a value for this field then recursively load the flat
+      // version of the referenced entity.
+      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
+        $flat_entity->{$field_name} = _couchdb_sync_flatten_entity($entity_wrapper->{$field_name}->type(), $entity_wrapper->{$field_name}->value());
+      }
+    }
+    // Check if the field is a list of entities, then recusively load flat
+    // versions of the referenced entities.
+    elseif ($entity_wrapper->{$field_name} instanceof EntityListWrapper && in_array(entity_property_extract_innermost_type($entity_wrapper->{$field_name}->type()), $entity_types)) {
+      // Check we have a value for this field.
+      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value()) && count($entity_wrapper->{$field_name}->value())) {
+        // Initialise the field as an array.
+        $flat_entity->{$field_name} = array();
+
+        // Loop through the referenced entities.
+        foreach ($entity_wrapper->{$field_name}->getIterator() as $child) {
+          $flat_entity->{$field_name}[] = _couchdb_sync_flatten_entity($child->type(), $child->value());
+        }
+      }
+    }
+    // Not an entity reference field so just check we have a value.
+    elseif (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
+      // Get the field value via the appropriate handler.
+      $flat_entity->{$field_name} = couchdb_sync_get_entity_field_value($entity_wrapper, $field_name);
+    }
+  }
+
+  // Check for a revision token and append if present.
+  if ($rev = couchdb_sync_get_entity_couchdb_rev($type, $entity_wrapper->getIdentifier())) {
+    $flat_entity->_rev = $rev;
+  }
+
+  return $flat_entity;
+}
+
+/**
+ * Implements hook_couchdb_sync_flatten_entity_fields_alter().
+ */
+function couchdb_sync_couchdb_sync_flatten_entity_fields_alter(array &$entity_fields, $type, $entity) {
+  switch ($type) {
+    // Add the SKU field for commerce products.
+    case 'commerce_product':
+      $entity_fields[] = 'sku';
+      break;
+  }
+}
+
+/**
+ * Get the CouchDB revision token for an entity.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param int $id
+ *   The ID of the entity.
+ *
+ * @return mixed
+ *   The CouchDB MVCC revision token for this entity type and ID or FALSE if
+ *   no matching data can be found.
+ */
+function couchdb_sync_get_entity_couchdb_rev($type, $id) {
+  $result = db_select('couchdb_sync_rev', 'c')
+    ->fields('c', array('rev'))
+    ->condition('type', $type)
+    ->condition('entity_id', $id)
+    ->execute()
+    ->fetchCol();
+
+  return (isset($result[0])) ? $result[0] : FALSE;
+}
+
+/**
+ * Store the CouchDB '_rev' value against the entity.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param int $id
+ *   The ID of the entity.
+ * @param string $rev
+ *   The CouchDB MVCC revision token.
+ * @param bool $is_new
+ *   Is this the first time a CouchDB revision was made for this entity?
+ *
+ * @return bool
+ *   TRUE if the rev token was set successfully otherwise FALSE.
+ */
+function couchdb_sync_set_entity_couchdb_rev($type, $id, $rev, $is_new = FALSE) {
+  // Build the record.
+  $record = array(
+    'entity_id' => $id,
+    'type' => $type,
+    'rev' => $rev,
+  );
+
+  // Update the db.
+  $result = drupal_write_record('couchdb_sync_rev', $record, ($is_new) ? array() : array('entity_id', 'type'));
+
+  // Check the database update was successful.
+  if ($result !== FALSE) {
+    return TRUE;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Delete the CouchDB revision token for an entity.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param int $id
+ *   The ID of the entity.
+ */
+function couchdb_sync_delete_entity_couchdb_rev($type, $id) {
+  db_delete('couchdb_sync_rev')
+    ->condition('type', $type)
+    ->condition('entity_id', $id)
+    ->execute();
+}
+
+/**
+ * Get the value of an entity field via the appropriate handler.
+ *
+ * @param EntityMetadataWrapper $entity_wrapper
+ *   A wrapped Drupal entity.
+ * @param string $field_name
+ *   The name of the field we want the value for.
+ *
+ * @return mixed
+ *   The value of the field as generated by the handler.
+ */
+function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapper, $field_name) {
+  $value = FALSE;
+
+  // TODO: Actually implement an extensible field handler system. Potentially
+  // develop a handler interface and have classes implement it. This classes can
+  // then be exposed via a plugin types hook.
+
+  // Load the field info.
+  $field_info = field_info_field($field_name);
+
+  // FIXME: Dirty hack value parsing for the PoC.
+  switch ($field_info['type']) {
+    case 'text_with_summary':
+      // Just get the normal value for text areas.
+      $value = $entity_wrapper->{$field_name}->value->value();
+      break;
+
+    case 'image':
+      // For images strip out some of the core data and append image style URLs.
+      $raw_value = $entity_wrapper->{$field_name}->value();
+
+      $value = array(
+        'src' => file_create_url($raw_value['uri']),
+        'filemime' => $raw_value['filemime'],
+        'filesize' => $raw_value['filesize'],
+        'width' => $raw_value['width'],
+        'height' => $raw_value['height'],
+        'image_styles' => array(),
+      );
+
+      foreach (array_keys(image_styles()) as $image_style) {
+        $value['image_styles'][$image_style] = image_style_url($image_style, $raw_value['uri']);
+      }
+
+      break;
+
+    case 'commerce_price':
+      // For commerce prices, format it a bit nicer instead of the raw value.
+      $raw_value = commerce_product_calculate_sell_price($entity_wrapper->raw());
+
+      // Load the currency code.
+      $currency = commerce_currency_load($raw_value['currency_code']);
+
+      $value = array(
+        // Output the decimals as strings to workaround issue with CouchDB
+        // floating point conversion.
+        'price' => (string) commerce_currency_amount_to_decimal($raw_value['amount'], $raw_value['currency_code']),
+        'formatted' => commerce_currency_format($raw_value['amount'], $raw_value['currency_code'], $entity_wrapper->raw()),
+        'currency' => array(
+          'code' => $raw_value['currency_code'],
+          'symbol' => $currency['symbol'],
+        ),
+      );
+
+      break;
+
+    case 'list_text':
+      // Get the list value.
+      $value = $entity_wrapper->{$field_name}->value();
+
+      // Loop through each field value and substitue the raw value for the human
+      // readable version.
+      foreach ($value as $delta => $list_value) {
+        $value[$delta] = $field_info['settings']['allowed_values'][$list_value];
+      }
+
+      break;
+
+    default:
+      // Default to the basic field value.
+      $value = $entity_wrapper->{$field_name}->value();
+      break;
+  }
+
+  return $value;
+}
