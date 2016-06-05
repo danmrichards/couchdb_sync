@@ -70,27 +70,19 @@ function couchdb_sync_requirements($phase) {
   $requirements = array();
   $t = get_t();
 
-  // Ensure the CouchDB connection is available on install and at runtime.
-  if ($phase == 'install' || $phase == 'runtime') {
-    $couch_vars = variable_get('couchdb', FALSE);
-    if (!$couch_vars) {
-      $requirements['couchdb_sync'] = array(
-        'severity' => REQUIREMENT_ERROR,
-        'title' => $t('CouchDB Sync'),
-        'description' => $t('CouchDB Sync cannot be installed. CouchDB connection setting not set. CouchDB cannot be reached. Make sure the $conf[\'couchdb\'] variable is set in settings.php.'),
-      );
-    }
-  }
-
   // Ensure the CouchDB connection is working at runtime.
   if ($phase == 'runtime') {
     try {
       $couch = new CouchDB();
     }
     catch (Exception $e) {
+      // Log the exception.
+      watchdog_exception('couchdb_sync', $e);
+
+      // Build the status report error.
       $requirements['couchdb_sync']['severity'] = REQUIREMENT_ERROR;
       $requirements['couchdb_sync']['title'] = $t('CouchDB Sync');
-      $requirements['couchdb_sync']['value'] = $t('CouchDB connection setting not set. CouchDB cannot be reached. Make sure the $conf[\'couchdb\'] variable is set in settings.php.');
+      $requirements['couchdb_sync']['value'] = $t('CouchDB cannot be reached. Make sure the $conf[\'couchdb\'] variable is set in settings.php. Otherwise check the <a href="@log_url">recent log messages</a>', array('@log_url' => url('admin/reports/dblog')));
     }
   }
 

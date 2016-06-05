@@ -119,41 +119,6 @@ function couchdb_sync_entity_delete($entity, $type) {
 }
 
 /**
- * Push an entity into the CouchDB queue.
- *
- * @param object $entity
- *   The entity object.
- * @param string $type
- *   The type of entity being saved (i.e. node, user, comment).
- * @param string $op
- *   The operation that needs to be performed in CouchDB.
- */
-function _couchdb_sync_create_queue_item($entity, $type, $op) {
-  // Get the entity info.
-  list($id, $vid) = entity_extract_ids($type, $entity);
-
-  // Build the queue item.
-  $queue_item = array(
-    'id' => $id,
-    'vid' => $vid,
-    'type' => $type,
-    'op' => $op,
-  );
-
-  // Load the CouchDB Sync.
-  $queue = DrupalQueue::get('couchdb_sync_push_entity');
-
-  // Push the item into the queue and check it was successful.
-  if (!$queue->createItem($queue_item)) {
-    watchdog('couchdb_sync', 'Could not push %type entity with an ID of %id to the CouchDB queue for the following operation: %op', array(
-      '%type' => $type,
-      '%id' => $id,
-      '%op' => $op,
-    ), WATCHDOG_ERROR);
-  }
-}
-
-/**
  * Return a database name for use with CouchDB.
  *
  * By default this is a machine friendly version of the site name. However
@@ -188,7 +153,43 @@ function couchdb_sync_get_database_name() {
     $db_name = variable_get('couchdb_sync_database_name', FALSE);
   }
 
+  // Ensure the first character is a letter. CouchDB requirement.
+  if (!preg_match('/[A-Za-z]/si', substr($db_name, 0, 1))) {
+    $db_name = 'couchdb_sync_' . $db_name;
+  }
+
   return $db_name;
+}
+
+/**
+ * Get the connection to the CouchDB instance.
+ *
+ * In the event the database with the expected name does not exist, it will be
+ * created.
+ *
+ * @return CouchDBDatabase
+ *   CouchDB database connection object.
+ */
+function couchdb_sync_get_database_connection() {
+  $db_name = couchdb_sync_get_database_name();
+
+  try {
+    // Connect to the database.
+    $couch = new CouchDB();
+    $database = $couch->getDatabase($db_name);
+  }
+  catch (CouchDBException $e) {
+    // Most likely the database doesn't exist, so double check.
+    $database_info = $couch->databaseInfo($db_name);
+
+    // The database doesn't exist, so create it.
+    if (isset($database_info->error) && $database_info->reason == 'no_db_file') {
+      $couch->createDatabase($db_name);
+      $database = $couch->getDatabase($db_name);
+    }
+  }
+
+  return $database;
 }
 
 /**
@@ -205,8 +206,7 @@ function couchdb_sync_insert_document($type, $flat_entity) {
 
   try {
     // Connect to the database.
-    $couch = new CouchDB();
-    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+    $database = couchdb_sync_get_database_connection();
 
     // Insert the document and update the revision token.
     $result = $database->storeDocument($type . '_' . $flat_entity->id, $flat_entity);
@@ -236,8 +236,7 @@ function couchdb_sync_update_document($type, $flat_entity) {
 
   try {
     // Connect to the database.
-    $couch = new CouchDB();
-    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+    $database = couchdb_sync_get_database_connection();
 
     // Insert the document and update the revision token.
     $result = $database->storeDocument($type . '_' . $flat_entity->id, $flat_entity);
@@ -272,8 +271,7 @@ function couchdb_sync_delete_document($type, $id) {
 
   try {
     // Connect to the database.
-    $couch = new CouchDB();
-    $database = $couch->getDatabase(couchdb_sync_get_database_name());
+    $database = couchdb_sync_get_database_connection();
 
     // Get the CouchDB revision token for this entity.
     $rev = couchdb_sync_get_entity_couchdb_rev($type, $id);
@@ -316,8 +314,7 @@ function couchdb_sync_get_document_by_id($id) {
   if (!is_null($id)) {
     try {
       // Connect to the database.
-      $couch = new CouchDB();
-      $database = $couch->getDatabase(couchdb_sync_get_database_name());
+      $database = couchdb_sync_get_database_connection();
 
       // Attempt to get a document with this ID.
       $result = $database->getDocument($id);
@@ -337,80 +334,6 @@ function couchdb_sync_get_document_by_id($id) {
   }
 
   return $return;
-}
-
-/**
- * Flatten a Drupal entity for storage in CouchDB.
- *
- * @param string $type
- *   The type of entity.
- * @param object $entity
- *   The raw Drupal entity.
- *
- * @return object
- *   A 'flattened' version of the entity.
- */
-function _couchdb_sync_flatten_entity($type, $entity) {
-  // TODO: Implement static caching.
-
-  // Get a list of valid entity types.
-  $entity_types = array_keys(entity_get_info());
-
-  // Load the entity wrapper.
-  $entity_wrapper = entity_metadata_wrapper($type, $entity);
-
-  // Build out the flat entity. Start with required fields.
-  $flat_entity = new stdClass();
-  $flat_entity->id = $entity_wrapper->getIdentifier();
-  $flat_entity->type = $type;
-  $flat_entity->title = $entity_wrapper->label();
-  $flat_entity->alias = drupal_get_path_alias($type . '/' . $flat_entity->id);
-
-  // Get the list of available fields.
-  $entity_fields = array_keys(field_info_instances($type, $entity_wrapper->getBundle()));
-
-  // TODO: Implement an extensible means of altering the list of fields. Either
-  // via a plugin system or some hook mechanism.
-  // Allow other modules to alter the list of fields.
-  drupal_alter('couchdb_sync_flatten_entity_fields', $entity_fields, $type, $entity);
-
-  // Parse the entity fields and produce a flattened key => value object.
-  foreach ($entity_fields as $field_name) {
-    // Check if the field is an entity reference.
-    if ($entity_wrapper->{$field_name} instanceof EntityDrupalWrapper) {
-      // Check we have a value for this field then recursively load the flat
-      // version of the referenced entity.
-      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
-        $flat_entity->{$field_name} = _couchdb_sync_flatten_entity($entity_wrapper->{$field_name}->type(), $entity_wrapper->{$field_name}->value());
-      }
-    }
-    // Check if the field is a list of entities, then recusively load flat
-    // versions of the referenced entities.
-    elseif ($entity_wrapper->{$field_name} instanceof EntityListWrapper && in_array(entity_property_extract_innermost_type($entity_wrapper->{$field_name}->type()), $entity_types)) {
-      // Check we have a value for this field.
-      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value()) && count($entity_wrapper->{$field_name}->value())) {
-        // Initialise the field as an array.
-        $flat_entity->{$field_name} = array();
-
-        // Loop through the referenced entities.
-        foreach ($entity_wrapper->{$field_name}->getIterator() as $child) {
-          $flat_entity->{$field_name}[] = _couchdb_sync_flatten_entity($child->type(), $child->value());
-        }
-      }
-    }
-    // Not an entity reference field so just check we have a value.
-    elseif (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
-      // Get the field value via the appropriate handler.
-      $flat_entity->{$field_name} = couchdb_sync_get_entity_field_value($entity_wrapper, $field_name);
-    }
-  }
-
-  // Check for a revision token and append if present.
-  if ($rev = couchdb_sync_get_entity_couchdb_rev($type, $entity_wrapper->getIdentifier())) {
-    $flat_entity->_rev = $rev;
-  }
-
-  return $flat_entity;
 }
 
 /**
@@ -584,4 +507,113 @@ function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapp
   }
 
   return $value;
+}
+
+/**
+ * Push an entity into the CouchDB queue.
+ *
+ * @param object $entity
+ *   The entity object.
+ * @param string $type
+ *   The type of entity being saved (i.e. node, user, comment).
+ * @param string $op
+ *   The operation that needs to be performed in CouchDB.
+ */
+function _couchdb_sync_create_queue_item($entity, $type, $op) {
+  // Get the entity info.
+  list($id, $vid) = entity_extract_ids($type, $entity);
+
+  // Build the queue item.
+  $queue_item = array(
+    'id' => $id,
+    'vid' => $vid,
+    'type' => $type,
+    'op' => $op,
+  );
+
+  // Load the CouchDB Sync.
+  $queue = DrupalQueue::get('couchdb_sync_push_entity');
+
+  // Push the item into the queue and check it was successful.
+  if (!$queue->createItem($queue_item)) {
+    watchdog('couchdb_sync', 'Could not push %type entity with an ID of %id to the CouchDB queue for the following operation: %op', array(
+      '%type' => $type,
+      '%id' => $id,
+      '%op' => $op,
+    ), WATCHDOG_ERROR);
+  }
+}
+
+/**
+ * Flatten a Drupal entity for storage in CouchDB.
+ *
+ * @param string $type
+ *   The type of entity.
+ * @param object $entity
+ *   The raw Drupal entity.
+ *
+ * @return object
+ *   A 'flattened' version of the entity.
+ */
+function _couchdb_sync_flatten_entity($type, $entity) {
+  // TODO: Implement static caching.
+
+  // Get a list of valid entity types.
+  $entity_types = array_keys(entity_get_info());
+
+  // Load the entity wrapper.
+  $entity_wrapper = entity_metadata_wrapper($type, $entity);
+
+  // Build out the flat entity. Start with required fields.
+  $flat_entity = new stdClass();
+  $flat_entity->id = $entity_wrapper->getIdentifier();
+  $flat_entity->type = $type;
+  $flat_entity->title = $entity_wrapper->label();
+  $flat_entity->alias = drupal_get_path_alias($type . '/' . $flat_entity->id);
+
+  // Get the list of available fields.
+  $entity_fields = array_keys(field_info_instances($type, $entity_wrapper->getBundle()));
+
+  // TODO: Implement an extensible means of altering the list of fields. Either
+  // via a plugin system or some hook mechanism.
+  // Allow other modules to alter the list of fields.
+  drupal_alter('couchdb_sync_flatten_entity_fields', $entity_fields, $type, $entity);
+
+  // Parse the entity fields and produce a flattened key => value object.
+  foreach ($entity_fields as $field_name) {
+    // Check if the field is an entity reference.
+    if ($entity_wrapper->{$field_name} instanceof EntityDrupalWrapper) {
+      // Check we have a value for this field then recursively load the flat
+      // version of the referenced entity.
+      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
+        $flat_entity->{$field_name} = _couchdb_sync_flatten_entity($entity_wrapper->{$field_name}->type(), $entity_wrapper->{$field_name}->value());
+      }
+    }
+    // Check if the field is a list of entities, then recusively load flat
+    // versions of the referenced entities.
+    elseif ($entity_wrapper->{$field_name} instanceof EntityListWrapper && in_array(entity_property_extract_innermost_type($entity_wrapper->{$field_name}->type()), $entity_types)) {
+      // Check we have a value for this field.
+      if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value()) && count($entity_wrapper->{$field_name}->value())) {
+        // Initialise the field as an array.
+        $flat_entity->{$field_name} = array();
+
+        // Loop through the referenced entities.
+        foreach ($entity_wrapper->{$field_name}->getIterator() as $child) {
+          $flat_entity->{$field_name}[] = _couchdb_sync_flatten_entity($child->type(), $child->value());
+        }
+      }
+    }
+    // Not an entity reference field so just check we have a value.
+    elseif (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
+      // Get the field value via the appropriate handler.
+      $flat_entity->{$field_name} = couchdb_sync_get_entity_field_value($entity_wrapper, $field_name);
+    }
+  }
+
+  // Check for a revision token and append if present.
+  if ($rev = couchdb_sync_get_entity_couchdb_rev($type, $entity_wrapper->getIdentifier())) {
+    $flat_entity->_rev = $rev;
+  }
+
+  return $flat_entity;
 }
