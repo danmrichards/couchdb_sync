@@ -7,4 +7,5 @@ dependencies[] = couchdb
 dependencies[] = ctools
 dependencies[] = entity
 
+files[] = includes/CouchDBSyncException.inc
 files[] = tests/couchdb_sync.test

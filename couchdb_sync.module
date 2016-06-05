@@ -184,8 +184,15 @@ function couchdb_sync_get_database_connection() {
 
     // The database doesn't exist, so create it.
     if (isset($database_info->error) && $database_info->reason == 'no_db_file') {
-      $couch->createDatabase($db_name);
-      $database = $couch->getDatabase($db_name);
+      $result = $couch->createDatabase($db_name);
+
+      // Ensure the db was created.
+      if (isset($result->ok) && $result->ok == TRUE) {
+        $database = $couch->getDatabase($db_name);
+      }
+      else {
+        throw new CouchDBSyncException('Could not connect to, or create, the CouchDB Sync database.');
+      }
     }
   }
 
