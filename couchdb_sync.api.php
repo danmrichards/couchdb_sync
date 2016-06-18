@@ -2,7 +2,68 @@
 
 /**
  * @file
- * API documentation for the CouchBD Sync module.
+ * API documentation for the CouchDB Sync module.
+ */
+
+/**
+ * CouchDB Sync export provides a CTools based plugin API.
+ *
+ * There is 1 type of plugin that can be defined: Flattener.
+ *
+ * @see CouchDBSyncFlattenerInterface
+ *
+ * @defgroup pluginapi Plugin API
+ *
+ * @{
+ */
+
+/**
+ * Example of a CTools plugin hook.
+ *
+ * All modules defining plugins must also implement this hook. This enables the
+ * module to then implement the plugin hook: hook_couchdb_sync_flatteners.
+ *
+ * @see hook_couchdb_sync_flatteners()
+ */
+function hook_ctools_plugin_api($owner, $api) {
+  if ($owner == 'couchdb_sync' && $api == 'plugins') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Defines a CouchDB Sync flattener plugin.
+ *
+ * All plugins defined by this hook will be tested to ensure that their class
+ * implements the CouchDBSyncFlattenerInterface interface. The 'path' attribute
+ * is optional, if omitted the root directory of the module will be checked. The
+ * module implementing this hook must also implement hook_ctools_plugin_api.
+ *
+ * @see CouchDBSyncFlattenerInterface
+ * @see hook_ctools_plugin_api()
+ */
+function hook_couchdb_sync_flatteners() {
+  return array(
+    'MyAwesomeFieldFlattener' => array(
+      'name' => 'My Awesome FieldFlattener',
+      'description' => 'Provides a flattener for my awesome field',
+      'handler' => array(
+        'class' => 'MyAwesomeFieldFlattener',
+        'file' => 'MyAwesomeFieldFlattener.inc',
+        'path' => drupal_get_path('module', 'my_awesome_module') . '/plugins',
+      ),
+    ),
+  );
+}
+
+/**
+ * @}
+ */
+
+/**
+ * @defgroup couchdb_sync_hooks CouchDB Sync Hooks
+ *
+ * @{
  */
 
 /**
@@ -69,3 +130,7 @@ function hook_couchdb_sync_pre_update_document($type, $flat_entity) {
 function hook_couchdb_sync_pre_deleted_document($type, $id) {
   drupal_set_message(t('The %type document with ID %id is about to be deleted from CouchDB', array('%type' => $type, '%id' => $id)));
 }
+
+/**
+ * @}
+ */

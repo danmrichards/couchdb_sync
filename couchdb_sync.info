@@ -8,4 +8,5 @@ dependencies[] = ctools
 dependencies[] = entity
 
 files[] = includes/CouchDBSyncException.inc
+files[] = includes/CouchDBSyncFlattener.interface.inc
 files[] = tests/couchdb_sync.test
