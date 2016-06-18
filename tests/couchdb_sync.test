@@ -15,6 +15,8 @@ class CouchDBSyncTestCase extends DrupalWebTestCase {
   // TODO: Add unit tests to ensure that entities not ready for push (e.g. a
   // node that is unpublished) do not get sent to CouchDB.
 
+  // TODO: Add unit tests to plugin API: valid plugin, invalid plugin, fallback.
+
   /**
    * {@inheritdoc}
    */

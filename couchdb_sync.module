@@ -21,6 +21,17 @@ function couchdb_sync_help($path, $arg) {
 }
 
 /**
+ * Implements hook_hook_info().
+ */
+function couchdb_sync_hook_info() {
+  $hooks['couchdb_sync_flatteners'] = array(
+    'group' => 'couchdb_sync',
+  );
+
+  return $hooks;
+}
+
+/**
  * Implements hook_cron_queue_info().
  */
 function couchdb_sync_cron_queue_info() {
@@ -510,9 +521,8 @@ function couchdb_sync_delete_entity_couchdb_rev($type, $id) {
 function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapper, $field_name) {
   $value = FALSE;
 
-  // TODO: Actually implement an extensible field handler system. Potentially
-  // develop a handler interface and have classes implement it. This classes can
-  // then be exposed via a plugin types hook.
+  // TODO: Add helper function to load the correct flattener plugin for the
+  // specified field type.
 
   // Load the field info.
   $field_info = field_info_field($field_name);
@@ -706,4 +716,22 @@ function _couchdb_sync_flatten_entity($type, $entity) {
 function _couchdb_sync_validate_flattener_plugin($id) {
   $class_name = ctools_plugin_load_class('couchdb_sync', 'flatteners', $id, 'handler');
   return !is_null($class_name) && class_implements($class_name, CouchDBSyncFlattenerInterface::class);
+}
+
+/**
+ * Load the class for a given plugin.
+ *
+ * @param string $type
+ *   Type of plugin we're loading.
+ * @param string $name
+ *   Name of the CTools plugin to load.
+ *
+ * @return mixed
+ *   An instantiated plugin object or FALSE if it could not be instantiated.
+ */
+function _couchdb_sync_load_plugin_object($type, $name) {
+  ctools_include('plugins');
+  $class_name = ctools_plugin_load_class('couchdb_sync', $type, $name, 'handler');
+
+  return (!is_null($class_name) && class_exists($class_name)) ? new $class_name() : FALSE;
 }

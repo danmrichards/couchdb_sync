@@ -8,8 +8,8 @@
 /**
  * Interface that all flattener plugins need to implement.
  *
- * Responsible for defining which fields the flatten plugin is valid for and
- * the heavy lifting of flattening the field itself.
+ * Responsible for defining which field type the flatten plugin supports and
+ * the heavy lifting of flattening the field value itself.
  */
 interface CouchDBSyncFlattenerInterface {
 
