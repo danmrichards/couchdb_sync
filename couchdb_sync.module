@@ -76,13 +76,13 @@ function couchdb_sync_push_entity_worker(array $queue_item) {
         }
 
         // Get the flattened version of the entity.
-        if ($flat_entity = _couchdb_sync_flatten_entity($queue_item['type'], $entity)) {
-          // Build the callback function name.
-          $callback = 'couchdb_sync_' . $queue_item['op'] . '_document';
+        $flat_entity = _couchdb_sync_flatten_entity($queue_item['type'], $entity);
 
-          // Run the callback function.
-          call_user_func($callback, $queue_item['type'], $flat_entity);
-        }
+        // Build the callback function name.
+        $callback = 'couchdb_sync_' . $queue_item['op'] . '_document';
+
+        // Run the callback function.
+        call_user_func($callback, $queue_item['type'], $flat_entity);
 
         break;
 
@@ -299,12 +299,14 @@ function couchdb_sync_insert_document($type, $flat_entity) {
     couchdb_sync_set_entity_couchdb_rev($type, $flat_entity->id, $result->rev, TRUE);
   }
   catch (Exception $e) {
-    // The insert failed, so log the error.
-    watchdog('couchdb_sync', 'Document insert failed for entity (type: %type, id: %id). Reason: @reason.', array(
+    // Something went wrong!
+    drupal_set_message(t('Document insert failed for entity (type: %type, id: %id). Reason: @reason.', array(
       '%type' => $type,
       '%id' => $flat_entity->id,
       '@reason' => $e->getMessage(),
-    ), WATCHDOG_ERROR);
+    )), 'error');
+
+    watchdog_exception('couchdb_sync', $e);
   }
 }
 
@@ -329,12 +331,14 @@ function couchdb_sync_update_document($type, $flat_entity) {
     couchdb_sync_set_entity_couchdb_rev($type, $flat_entity->id, $result->rev);
   }
   catch (Exception $e) {
-    // The insert failed, so log the error.
-    watchdog('couchdb_sync', 'Document update failed for entity (type: %type, id: %id). Reason: @reason.', array(
+    // Something went wrong!
+    drupal_set_message(t('Document update failed for entity (type: %type, id: %id). Reason: @reason.', array(
       '%type' => $type,
       '%id' => $flat_entity->id,
       '@reason' => $e->getMessage(),
-    ), WATCHDOG_ERROR);
+    )), 'error');
+
+    watchdog_exception('couchdb_sync', $e);
   }
 }
 
@@ -345,15 +349,10 @@ function couchdb_sync_update_document($type, $flat_entity) {
  *   The type of entity.
  * @param int $id
  *   The ID of the entity.
- *
- * @return bool
- *   TRUE if the document was deleted otherwise FALSE.
  */
 function couchdb_sync_delete_document($type, $id) {
   // Allow other modules to act on the document being deleted.
   module_invoke_all('couchdb_sync_pre_delete_document', $type, $id);
-
-  $return = FALSE;
 
   try {
     // Connect to the database.
@@ -366,23 +365,21 @@ function couchdb_sync_delete_document($type, $id) {
     $result = $database->deleteDocument($type . '_' . $id, $rev);
 
     // Check the IDs match.
-    if (isset($result->ok) && $result->ok == TRUE) {
+    if (isset($result->ok) && $result->ok === TRUE) {
       // Delete the CouchDB revision token.
       couchdb_sync_delete_entity_couchdb_rev($type, $id);
-
-      $return = TRUE;
     }
   }
   catch (Exception $e) {
-    // The insert failed, so log the error.
-    watchdog('couchdb_sync', 'Document delete failed for type: %type id: %id. Reason: @reason.', array(
+    // Something went wrong!
+    drupal_set_message(t('Document delete failed for entity (type: %type, id: %id). Reason: @reason.', array(
       '%type' => $type,
-      '%id' => $flat_entity->id,
+      '%id' => $id,
       '@reason' => $e->getMessage(),
-    ), WATCHDOG_ERROR);
-  }
+    )), 'error');
 
-  return $return;
+    watchdog_exception('couchdb_sync', $e);
+  }
 }
 
 /**
@@ -395,8 +392,6 @@ function couchdb_sync_delete_document($type, $id) {
  *   Document from CouchDB if present or FALSE.
  */
 function couchdb_sync_get_document_by_id($id) {
-  $return = FALSE;
-
   if (!is_null($id)) {
     try {
       // Connect to the database.
@@ -407,19 +402,16 @@ function couchdb_sync_get_document_by_id($id) {
 
       // Check the IDs match.
       if (isset($result->_id) && $result->_id == $id) {
-        $return = $result;
+        return $result;
       }
     }
     catch (Exception $e) {
-      // The insert failed, so log the error.
-      watchdog('couchdb_sync', 'Document get failed for id: %id. Reason: @reason.', array(
-        '%id' => $flat_entity->id,
-        '@reason' => $e->getMessage(),
-      ), WATCHDOG_ERROR);
+      // Something went wrong!
+      watchdog_exception('couchdb_sync', $e);
     }
   }
 
-  return $return;
+  return FALSE;
 }
 
 /**
@@ -481,15 +473,7 @@ function couchdb_sync_set_entity_couchdb_rev($type, $id, $rev, $is_new = FALSE) 
   );
 
   // Update the db.
-  $result = drupal_write_record('couchdb_sync_rev', $record, ($is_new) ? array() : array('entity_id', 'type'));
-
-  // Check the database update was successful.
-  if ($result !== FALSE) {
-    return TRUE;
-  }
-  else {
-    return FALSE;
-  }
+  return drupal_write_record('couchdb_sync_rev', $record, ($is_new) ? array() : array('entity_id', 'type')) !== FALSE;
 }
 
 /**
