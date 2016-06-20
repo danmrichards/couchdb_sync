@@ -8,16 +8,15 @@
 /**
  * Generic CouchDB Sync Flattener plugin.
  */
-class CouchDBSyncGenericFlattener implements CouchDBSyncFlattenerInterface {
+final class CouchDBSyncGenericFlattener implements CouchDBSyncFlattenerInterface {
 
   /**
    * {@inheritdoc}
    */
   public function getSupportedFieldType() {
     // This plugin is a special case and is used as a fallback if no valid
-    // plugin can be found for the requested field type. So this function does
-    // not need to return a field type.
-    return NULL;
+    // plugin can be found for the requested field type.
+    return '*';
   }
 
   /**

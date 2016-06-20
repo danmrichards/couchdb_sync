@@ -149,6 +149,84 @@ function couchdb_sync_get_flattener_plugin($name) {
 }
 
 /**
+ * Get a list of flatteners with their allocated field type.
+ *
+ * @param bool $reset
+ *   Reset the flattener plugins static cache.
+ *
+ * @return array
+ *   Array of flattener plugins keyed by their allocated field type.
+ */
+function couchdb_sync_get_flatteners_by_type($reset = FALSE) {
+  $flatteners = &drupal_static(__FUNCTION__);
+
+  // Check if we have statically cached flatteners and no reset flag was passed.
+  if (isset($flatteners) && !$reset) {
+    return $flatteners;
+  }
+
+  $flatteners = array();
+
+  // Loop through available flatteners.
+  foreach (couchdb_sync_get_flattener_plugins() as $name => $plugin) {
+    // Get the plugin object.
+    $plugin_object = _couchdb_sync_load_plugin_object('flatteners', $name);
+
+    // Get the field type the plugin supports.
+    $plugin_field_type = $plugin_object->getSupportedFieldType();
+
+    // Allocate the field type to this plugin, or throw an error if it has been
+    // allocated to another plugin already.
+    if (!isset($flatteners[$plugin_field_type])) {
+      $flatteners[$plugin_field_type] = $name;
+    }
+    else {
+      throw new CouchDBSyncException(t('Flattener plugin (@name) attempted to use field type already allocated.', array('@name' => $name)));
+    }
+  }
+
+  return $flatteners;
+}
+
+/**
+ * Get an flattener plugin object for the requested field type.
+ *
+ * @param string $field_type
+ *   Type of field being flattened. Must be a valid field type.
+ * @param bool $reset
+ *   Force a reset of the static flattener cache.
+ *
+ * @return CouchDBSyncFlattenerInterface
+ *   Instantiated flattener object.
+ *
+ * @see field_info_field_types
+ */
+function couchdb_sync_get_field_type_flattener($field_type, $reset = FALSE) {
+  $flattener = &drupal_static(__FUNCTION__);
+
+  // Return the statically cached flattener if present.
+  if (isset($flattener[$field_type]) && !$reset) {
+    return $flattener[$field_type];
+  }
+
+  // Get the list of valid field types.
+  $field_types = array_keys(field_info_field_types());
+
+  // Ensure we have a valid field type.
+  if (!in_array($field_type, $field_types)) {
+    throw new CouchDBSyncException(t('Could not get flattener: Invalid field type specified'));
+  }
+
+  // Get the list of flatteners.
+  $flatteners_by_type = couchdb_sync_get_flatteners_by_type();
+
+  // Get the correct plugin for this field type, or use the generic fallback.
+  $flattener[$field_type] = !empty($flatteners_by_type[$field_type]) ? $flatteners_by_type[$field_type] : $flatteners_by_type['*'];
+
+  return $flattener[$field_type];
+}
+
+/**
  * Implements hook_entity_insert().
  */
 function couchdb_sync_entity_insert($entity, $type) {
@@ -505,11 +583,12 @@ function couchdb_sync_delete_entity_couchdb_rev($type, $id) {
 function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapper, $field_name) {
   $value = FALSE;
 
-  // TODO: Add helper function to load the correct flattener plugin for the
-  // specified field type.
-
   // Load the field info.
   $field_info = field_info_field($field_name);
+
+  // TODO: Add helper function to load the correct flattener plugin for the
+  // specified field type.
+  $flattener = couchdb_sync_get_field_type_flattener($field_info['type']);
 
   // FIXME: Dirty hack value parsing for the PoC.
   switch ($field_info['type']) {
