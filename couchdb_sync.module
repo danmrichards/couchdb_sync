@@ -5,6 +5,8 @@
  * Main hooks and functionality for the CouchDB Sync module.
  */
 
+define('COUCHDB_SYNC_GENERIC_FIELD_INDICATOR', '*');
+
 // TODO: Implement an admin UI for entity enablement, push mode etc.
 
 /**
@@ -104,126 +106,6 @@ function couchdb_sync_ctools_plugin_type() {
       'classes' => array('handler'),
     ),
   );
-}
-
-/**
- * Get all flattener plugins.
- *
- * @return array
- *   Array containing information on all available flattener plugins.
- */
-function couchdb_sync_get_flattener_plugins($reset = FALSE) {
-  $flatteners = &drupal_static(__FUNCTION__);
-
-  // If we have no statically cached flatteners, we need to get them.
-  if (NULL === $flatteners || $reset) {
-    ctools_include('plugins');
-
-    // Get the defined plugins.
-    $flatteners = ctools_get_plugins('couchdb_sync', 'flatteners');
-
-    // Check the parser plugins extend the correct base class.
-    $flatteners = array_filter($flatteners, '_couchdb_sync_validate_flattener_plugin', ARRAY_FILTER_USE_KEY);
-  }
-
-  return $flatteners;
-}
-
-/**
- * Get one flattener plugin.
- *
- * @param string $name
- *   Name of the flattener plugin to get.
- *
- * @return mixed
- *   Array containing information on the specified flattener plugins or FALSE if
- *   the plugin does not extend the correct class.
- */
-function couchdb_sync_get_flattener_plugin($name) {
-  ctools_include('plugins');
-
-  // Get the plugin.
-  $parser = ctools_get_plugins('couchdb_sync', 'flatteners', $name);
-
-  return _couchdb_sync_validate_flattener_plugin($name) ? $parser : FALSE;
-}
-
-/**
- * Get a list of flatteners with their allocated field type.
- *
- * @param bool $reset
- *   Reset the flattener plugins static cache.
- *
- * @return array
- *   Array of flattener plugins keyed by their allocated field type.
- */
-function couchdb_sync_get_flatteners_by_type($reset = FALSE) {
-  $flatteners = &drupal_static(__FUNCTION__);
-
-  // Check if we have statically cached flatteners and no reset flag was passed.
-  if (isset($flatteners) && !$reset) {
-    return $flatteners;
-  }
-
-  $flatteners = array();
-
-  // Loop through available flatteners.
-  foreach (couchdb_sync_get_flattener_plugins() as $name => $plugin) {
-    // Get the plugin object.
-    $plugin_object = _couchdb_sync_load_plugin_object('flatteners', $name);
-
-    // Get the field type the plugin supports.
-    $plugin_field_type = $plugin_object->getSupportedFieldType();
-
-    // Allocate the field type to this plugin, or throw an error if it has been
-    // allocated to another plugin already.
-    if (!isset($flatteners[$plugin_field_type])) {
-      $flatteners[$plugin_field_type] = $name;
-    }
-    else {
-      throw new CouchDBSyncException(t('Flattener plugin (@name) attempted to use field type already allocated.', array('@name' => $name)));
-    }
-  }
-
-  return $flatteners;
-}
-
-/**
- * Get an flattener plugin object for the requested field type.
- *
- * @param string $field_type
- *   Type of field being flattened. Must be a valid field type.
- * @param bool $reset
- *   Force a reset of the static flattener cache.
- *
- * @return CouchDBSyncFlattenerInterface
- *   Instantiated flattener object.
- *
- * @see field_info_field_types
- */
-function couchdb_sync_get_field_type_flattener($field_type, $reset = FALSE) {
-  $flattener = &drupal_static(__FUNCTION__);
-
-  // Return the statically cached flattener if present.
-  if (isset($flattener[$field_type]) && !$reset) {
-    return $flattener[$field_type];
-  }
-
-  // Get the list of valid field types.
-  $field_types = array_keys(field_info_field_types());
-
-  // Ensure we have a valid field type.
-  if (!in_array($field_type, $field_types)) {
-    throw new CouchDBSyncException(t('Could not get flattener: Invalid field type specified'));
-  }
-
-  // Get the list of flatteners.
-  $flatteners_by_type = couchdb_sync_get_flatteners_by_type();
-
-  // Get the correct plugin for this field type, or use the generic fallback.
-  $flattener[$field_type] = !empty($flatteners_by_type[$field_type]) ? $flatteners_by_type[$field_type] : $flatteners_by_type['*'];
-
-  return $flattener[$field_type];
 }
 
 /**
@@ -586,75 +468,11 @@ function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapp
   // Load the field info.
   $field_info = field_info_field($field_name);
 
-  // TODO: Add helper function to load the correct flattener plugin for the
-  // specified field type.
+  // Load the correct flattener plugin for the specified field type.
+  module_load_include('inc', 'couchdb_sync', 'couchdb_sync.flatteners');
   $flattener = couchdb_sync_get_field_type_flattener($field_info['type']);
 
-  // FIXME: Dirty hack value parsing for the PoC.
-  switch ($field_info['type']) {
-    case 'text_with_summary':
-      // Just get the normal value for text areas.
-      $value = $entity_wrapper->{$field_name}->value->value();
-      break;
-
-    case 'image':
-      // For images strip out some of the core data and append image style URLs.
-      $raw_value = $entity_wrapper->{$field_name}->value();
-
-      $value = array(
-        'src' => file_create_url($raw_value['uri']),
-        'filemime' => $raw_value['filemime'],
-        'filesize' => $raw_value['filesize'],
-        'width' => $raw_value['width'],
-        'height' => $raw_value['height'],
-        'image_styles' => array(),
-      );
-
-      foreach (array_keys(image_styles()) as $image_style) {
-        $value['image_styles'][$image_style] = image_style_url($image_style, $raw_value['uri']);
-      }
-
-      break;
-
-    case 'commerce_price':
-      // For commerce prices, format it a bit nicer instead of the raw value.
-      $raw_value = commerce_product_calculate_sell_price($entity_wrapper->raw());
-
-      // Load the currency code.
-      $currency = commerce_currency_load($raw_value['currency_code']);
-
-      $value = array(
-        // Output the decimals as strings to workaround issue with CouchDB
-        // floating point conversion.
-        'price' => (string) commerce_currency_amount_to_decimal($raw_value['amount'], $raw_value['currency_code']),
-        'formatted' => commerce_currency_format($raw_value['amount'], $raw_value['currency_code'], $entity_wrapper->raw()),
-        'currency' => array(
-          'code' => $raw_value['currency_code'],
-          'symbol' => $currency['symbol'],
-        ),
-      );
-
-      break;
-
-    case 'list_text':
-      // Get the list value.
-      $value = $entity_wrapper->{$field_name}->value();
-
-      // Loop through each field value and substitue the raw value for the human
-      // readable version.
-      foreach ($value as $delta => $list_value) {
-        $value[$delta] = $field_info['settings']['allowed_values'][$list_value];
-      }
-
-      break;
-
-    default:
-      // Default to the basic field value.
-      $value = $entity_wrapper->{$field_name}->value();
-      break;
-  }
-
-  return $value;
+  return $flattener->flatten($entity_wrapper, $field_name);
 }
 
 /**
@@ -764,37 +582,4 @@ function _couchdb_sync_flatten_entity($type, $entity) {
   }
 
   return $flat_entity;
-}
-
-
-/**
- * Validate that a flattener plugin extends the correct base class.
- *
- * @param string $id
- *   CTools ID of the flattener plugin.
- *
- * @return bool
- *   Does the plugin extend the correct base class?
- */
-function _couchdb_sync_validate_flattener_plugin($id) {
-  $class_name = ctools_plugin_load_class('couchdb_sync', 'flatteners', $id, 'handler');
-  return !is_null($class_name) && class_implements($class_name, CouchDBSyncFlattenerInterface::class);
-}
-
-/**
- * Load the class for a given plugin.
- *
- * @param string $type
- *   Type of plugin we're loading.
- * @param string $name
- *   Name of the CTools plugin to load.
- *
- * @return mixed
- *   An instantiated plugin object or FALSE if it could not be instantiated.
- */
-function _couchdb_sync_load_plugin_object($type, $name) {
-  ctools_include('plugins');
-  $class_name = ctools_plugin_load_class('couchdb_sync', $type, $name, 'handler');
-
-  return (!is_null($class_name) && class_exists($class_name)) ? new $class_name() : FALSE;
 }

@@ -16,7 +16,7 @@ final class CouchDBSyncGenericFlattener implements CouchDBSyncFlattenerInterface
   public function getSupportedFieldType() {
     // This plugin is a special case and is used as a fallback if no valid
     // plugin can be found for the requested field type.
-    return '*';
+    return COUCHDB_SYNC_GENERIC_FIELD_INDICATOR;
   }
 
   /**
