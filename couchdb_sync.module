@@ -375,18 +375,6 @@ function couchdb_sync_get_document_by_id($id) {
 }
 
 /**
- * Implements hook_couchdb_sync_flatten_entity_fields_alter().
- */
-function couchdb_sync_couchdb_sync_flatten_entity_fields_alter(array &$entity_fields, $type, $entity) {
-  switch ($type) {
-    // Add the SKU field for commerce products.
-    case 'commerce_product':
-      $entity_fields[] = 'sku';
-      break;
-  }
-}
-
-/**
  * Get the CouchDB revision token for an entity.
  *
  * @param string $type
@@ -468,6 +456,8 @@ function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapp
   // Load the field info.
   $field_info = field_info_field($field_name);
 
+  // TODO: Implement field cardinality handling.
+
   // Load the correct flattener plugin for the specified field type.
   module_load_include('inc', 'couchdb_sync', 'couchdb_sync.flatteners');
   $flattener = couchdb_sync_get_field_type_flattener($field_info['type']);
@@ -517,12 +507,14 @@ function _couchdb_sync_create_queue_item($entity, $type, $op) {
  *   The type of entity.
  * @param object $entity
  *   The raw Drupal entity.
+ * @param bool $reset
+ *   Force a reset of the flattened entity cache.
  *
  * @return object
  *   A 'flattened' version of the entity.
  */
-function _couchdb_sync_flatten_entity($type, $entity) {
-  // TODO: Implement static caching.
+function _couchdb_sync_flatten_entity($type, $entity, $reset = FALSE) {
+  $flat_entities = &drupal_static(__FUNCTION__);
 
   // Get a list of valid entity types.
   $entity_types = array_keys(entity_get_info());
@@ -530,9 +522,21 @@ function _couchdb_sync_flatten_entity($type, $entity) {
   // Load the entity wrapper.
   $entity_wrapper = entity_metadata_wrapper($type, $entity);
 
+  // Get the entity identifier.
+  $entity_id = $entity_wrapper->getIdentifier();
+
+  $flat_entity_index = $type . ':' . $entity_id;
+
+  // Return the statically cached entity if present.
+  if (isset($flat_entities[$flat_entity_index]) && !$reset) {
+    return $flat_entities[$flat_entity_index];
+  }
+
+  $flat_entities = array();
+
   // Build out the flat entity. Start with required fields.
   $flat_entity = new stdClass();
-  $flat_entity->id = $entity_wrapper->getIdentifier();
+  $flat_entity->id = $entity_id;
   $flat_entity->type = $type;
   $flat_entity->title = $entity_wrapper->label();
   $flat_entity->alias = drupal_get_path_alias($type . '/' . $flat_entity->id);
@@ -540,8 +544,6 @@ function _couchdb_sync_flatten_entity($type, $entity) {
   // Get the list of available fields.
   $entity_fields = array_keys(field_info_instances($type, $entity_wrapper->getBundle()));
 
-  // TODO: Implement an extensible means of altering the list of fields. Either
-  // via a plugin system or some hook mechanism.
   // Allow other modules to alter the list of fields.
   drupal_alter('couchdb_sync_flatten_entity_fields', $entity_fields, $type, $entity);
 
@@ -581,5 +583,6 @@ function _couchdb_sync_flatten_entity($type, $entity) {
     $flat_entity->_rev = $rev;
   }
 
-  return $flat_entity;
+  $flat_entities[$flat_entity_index] = $flat_entity;
+  return $flat_entities[$flat_entity_index];
 }
