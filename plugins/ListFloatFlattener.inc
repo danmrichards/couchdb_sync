@@ -2,19 +2,19 @@
 
 /**
  * @file
- * Contains ListTextFlattener.
+ * Contains ListFloatFlattener.
  */
 
 /**
  * CouchDB Sync Flattener plugin for 'list_text' fields.
  */
-final class ListTextFlattener implements CouchDBSyncFlattenerInterface {
+final class ListFloatFlattener implements CouchDBSyncFlattenerInterface {
 
   /**
    * {@inheritdoc}
    */
   public function getSupportedFieldType() {
-    return 'list_text';
+    return 'list_float';
   }
 
   /**

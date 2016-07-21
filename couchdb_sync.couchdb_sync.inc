@@ -9,7 +9,6 @@
  * Implements hook_couchdb_sync_flatteners().
  */
 function couchdb_sync_couchdb_sync_flatteners() {
-  // TODO: Add handler plugins for all core field types (if required).
   return array(
     'GenericFlattener' => array(
       'name' => 'Generic CouchDB Sync Flattener plugin',
@@ -44,6 +43,33 @@ function couchdb_sync_couchdb_sync_flatteners() {
       'handler' => array(
         'class' => 'ListTextFlattener',
         'file' => 'ListTextFlattener.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
+      ),
+    ),
+    'FileFlattener' => array(
+      'name' => '"File" CouchDB Sync Flattener plugin',
+      'description' => 'Provides a CouchDB sync flattener for "file" fields.',
+      'handler' => array(
+        'class' => 'FileFlattener',
+        'file' => 'FileFlattener.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
+      ),
+    ),
+    'ListFloatFlattener' => array(
+      'name' => '"List (float)" CouchDB Sync Flattener plugin',
+      'description' => 'Provides a CouchDB sync flattener for "list_float" fields.',
+      'handler' => array(
+        'class' => 'ListFloatFlattener',
+        'file' => 'ListFloatFlattener.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
+      ),
+    ),
+    'ListIntegerFlattener' => array(
+      'name' => '"List (integer)" CouchDB Sync Flattener plugin',
+      'description' => 'Provides a CouchDB sync flattener for "list_integer" fields.',
+      'handler' => array(
+        'class' => 'ListIntegerFlattener',
+        'file' => 'ListIntegerFlattener.inc',
         'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
       ),
     ),
