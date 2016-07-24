@@ -20,22 +20,39 @@ final class FileFlattener implements CouchDBSyncFlattenerInterface {
   /**
    * {@inheritdoc}
    */
-  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name) {
+  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name, $multiple = FALSE) {
     // Attempt to get the field value.
     if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
       // For images strip out some of the core data and append image style URLs.
       $raw_value = $entity_wrapper->{$field_name}->value();
 
-      return array(
-        'src' => file_create_url($raw_value['uri']),
-        'filemime' => $raw_value['filemime'],
-        'filesize' => $raw_value['filesize'],
-        'description' => $raw_value['description'],
-      );
+      if ($multiple !== FALSE) {
+        return array_map(array($this, 'parseValue'), $raw_value);
+      }
+
+      return $this->parseValue($raw_value);
     }
     else {
       return FALSE;
     }
+  }
+
+  /**
+   * Parse a single field value into the desired format.
+   *
+   * @param array $value
+   *   The raw value of the field.
+   *
+   * @return array
+   *   Parsed field value array.
+   */
+  protected function parseValue($value) {
+    return array(
+      'src' => file_create_url($value['uri']),
+      'filemime' => $value['filemime'],
+      'filesize' => $value['filesize'],
+      'description' => $value['description'],
+    );
   }
 
 }

@@ -22,7 +22,7 @@ final class GenericFlattener implements CouchDBSyncFlattenerInterface {
   /**
    * {@inheritdoc}
    */
-  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name) {
+  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name, $multiple = FALSE) {
     // Attempt to get the field value.
     if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
       return $entity_wrapper->{$field_name}->value();

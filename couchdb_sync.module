@@ -456,13 +456,14 @@ function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapp
   // Load the field info.
   $field_info = field_info_field($field_name);
 
-  // TODO: Implement field cardinality handling.
-
   // Load the correct flattener plugin for the specified field type.
   module_load_include('inc', 'couchdb_sync', 'couchdb_sync.flatteners');
   $flattener = couchdb_sync_get_field_type_flattener($field_info['type']);
 
-  return $flattener->flatten($entity_wrapper, $field_name);
+  // Cardinality: Is this a multi-value field?
+  $multiple = $field_info['cardinality'] > 1 || $field_info['cardinality'] == FIELD_CARDINALITY_UNLIMITED;
+
+  return $flattener->flatten($entity_wrapper, $field_name, $multiple);
 }
 
 /**

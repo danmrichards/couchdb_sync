@@ -20,12 +20,13 @@ final class ImageFlattener implements CouchDBSyncFlattenerInterface {
   /**
    * {@inheritdoc}
    */
-  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name) {
+  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name, $multiple = FALSE) {
     // Attempt to get the field value.
     if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
       // For images strip out some of the core data and append image style URLs.
       $raw_value = $entity_wrapper->{$field_name}->value();
 
+      // TODO: Implement multiple value handling.
       $value = array(
         'src' => file_create_url($raw_value['uri']),
         'filemime' => $raw_value['filemime'],

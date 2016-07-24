@@ -30,10 +30,12 @@ interface CouchDBSyncFlattenerInterface {
    *   A wrapped Drupal entity.
    * @param string $field_name
    *   The name of the field, on the entity, to flatten the value of.
+   * @param bool $multiple
+   *   Is this a multiple value field?
    *
    * @return mixed
    *   The flattened field value or FALSE if the flatten failed.
    */
-  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name);
+  public function flatten(EntityMetadataWrapper $entity_wrapper, $field_name, $multiple = FALSE);
 
 }

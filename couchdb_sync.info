@@ -6,6 +6,7 @@ core = 7.x
 dependencies[] = couchdb
 dependencies[] = ctools
 dependencies[] = entity
+dependencies[] = field
 
 files[] = includes/CouchDBSyncException.inc
 files[] = includes/CouchDBSyncFlattener.interface.inc
