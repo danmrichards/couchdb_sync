@@ -42,7 +42,7 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $result = $couch->databaseInfo($db_name);
 
     // Check the database exists.
-    $this->assertEqual($result->db_name, $db_name, 'Site database exists in CouchDB');
+    $this->assertEqual($result->db_name, $db_name, t('Site database exists in CouchDB'));
   }
 
   /**
@@ -61,7 +61,8 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     // Create a test node.
     $test_node = $this->drupalCreateNode($settings);
 
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 
@@ -69,14 +70,14 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $couchdb_node_document = couchdb_sync_get_document_by_id('node_' . $test_node->nid);
 
     // Check the document ID matches.
-    $this->assertEqual($couchdb_node_document->id, $test_node->nid, 'Document with matching ID exists in CouchDB');
+    $this->assertEqual($couchdb_node_document->id, $test_node->nid, t('Document with matching ID exists in CouchDB'));
 
     // Check the document body contains the expected string.
     $this->drupalSetContent(is_object($couchdb_node_document->body) ? $couchdb_node_document->body->value : $couchdb_node_document->body);
-    $this->assertPattern('|This is a CouchDB document|', 'CouchDB document contains expected string in body.');
+    $this->assertPattern('|This is a CouchDB document|', t('CouchDB document contains expected string in body.'));
 
     // Check the revision token matches.
-    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), 'Local and CouchDB revision tokens match.');
+    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), t('Local and CouchDB revision tokens match.'));
   }
 
   /**
@@ -95,7 +96,8 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     // Create a test node.
     $test_node = $this->drupalCreateNode($settings);
 
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 
@@ -103,13 +105,13 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $couchdb_node_document = couchdb_sync_get_document_by_id('node_' . $test_node->nid);
 
     // Check the document ID matches.
-    $this->assertEqual($couchdb_node_document->id, $test_node->nid, 'Document with matching ID exists in CouchDB');
+    $this->assertEqual($couchdb_node_document->id, $test_node->nid, t('Document with matching ID exists in CouchDB'));
 
     // Check the document body contains the expected string.
-    $this->assertEqual($couchdb_node_document->title, 'This is a CouchDB document', 'CouchDB document has expected title value.');
+    $this->assertEqual($couchdb_node_document->title, 'This is a CouchDB document', t('CouchDB document has expected title value.'));
 
     // Check the revision token matches.
-    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), 'Local and CouchDB revision tokens match.');
+    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), t('Local and CouchDB revision tokens match.'));
 
     // Generate a new node title.
     $new_title = $this->randomName(10);
@@ -128,7 +130,7 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     // Save the node.
     node_save($updated_node);
 
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 
@@ -136,13 +138,13 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $couchdb_updated_node_document = couchdb_sync_get_document_by_id('node_' . $test_node->nid);
 
     // Check the document ID matches.
-    $this->assertEqual($couchdb_updated_node_document->id, $updated_node->nid, 'Updated document with matching ID exists in CouchDB');
+    $this->assertEqual($couchdb_updated_node_document->id, $updated_node->nid, t('Updated document with matching ID exists in CouchDB'));
 
     // Check the document body contains the expected string.
-    $this->assertEqual($couchdb_updated_node_document->title, $new_title, 'CouchDB document has expected updated title value.');
+    $this->assertEqual($couchdb_updated_node_document->title, $new_title, t('CouchDB document has expected updated title value.'));
 
     // Check the revision token matches.
-    $this->assertEqual($couchdb_updated_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $updated_node->nid), 'Local and CouchDB revision tokens match.');
+    $this->assertEqual($couchdb_updated_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $updated_node->nid), t('Local and CouchDB revision tokens match.'));
   }
 
   /**
@@ -161,7 +163,8 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     // Create a test node.
     $test_node = $this->drupalCreateNode($settings);
 
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 
@@ -169,15 +172,16 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $couchdb_node_document = couchdb_sync_get_document_by_id('node_' . $test_node->nid);
 
     // Check the document ID matches.
-    $this->assertEqual($couchdb_node_document->id, $test_node->nid, 'Document with matching ID exists in CouchDB');
+    $this->assertEqual($couchdb_node_document->id, $test_node->nid, t('Document with matching ID exists in CouchDB'));
 
     // Check the revision token matches.
-    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), 'Local and CouchDB revision tokens match.');
+    $this->assertEqual($couchdb_node_document->_rev, couchdb_sync_get_entity_couchdb_rev('node', $test_node->nid), t('Local and CouchDB revision tokens match.'));
 
     // Delete the node.
     node_delete($test_node->nid);
 
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 
@@ -185,7 +189,7 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     $couchdb_deleted_node_document = couchdb_sync_get_document_by_id('node_' . $test_node->nid);
 
     // Check the document was deleted.
-    $this->assertFalse($couchdb_deleted_node_document, 'Document was marked as deleted in CouchDB');
+    $this->assertFalse($couchdb_deleted_node_document, t('Document was marked as deleted in CouchDB'));
   }
 
 }

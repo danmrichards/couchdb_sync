@@ -24,8 +24,6 @@ class CouchDBSyncPluginTest extends CouchDBSyncBase {
    */
   protected $invalidPlugin = 'BrokenFlattener';
 
-  // TODO: Add unit tests for all core field type plugins.
-
   /**
    * {@inheritdoc}
    */
@@ -50,6 +48,22 @@ class CouchDBSyncPluginTest extends CouchDBSyncBase {
 
     // Check the valid plugin is present.
     $this->assertFalse(in_array($this->invalidPlugin, array_keys($plugins)), t('Invalid plugin is not present.'));
+  }
+
+  /**
+   * Test the functionality of the core field type flatteners.
+   */
+  public function testCoreFieldFlatteners() {
+    // TODO: Create a test node.
+    $test_node = $this->drupalCreateNode($this->getExampleNodeSettings());
+
+    // TODO: Get the flattened version of the test node.
+    $flattened_test_node = _couchdb_sync_flatten_entity('node', $test_node);
+
+    // TODO: Check each of the fields has been flattened correctly.
+    foreach ($this->getExpectedFlatFields() as $field_name => $flat_field) {
+      $this->assertEqual($flat_field, $flattened_test_node->{$flat_field}, t('Field (@field_name) flattened correctly', array('@field_name' => $field_name)));
+    }
   }
 
 }

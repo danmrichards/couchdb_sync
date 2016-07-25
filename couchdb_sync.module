@@ -121,7 +121,8 @@ function couchdb_sync_entity_insert($entity, $type) {
   // be pushed if they are unpublished.
   if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
     // Push the entity to the queue.
-    // TODO: Add config option to push immediately instead of using queue.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     _couchdb_sync_create_queue_item($entity, $type, 'insert');
   }
 }
