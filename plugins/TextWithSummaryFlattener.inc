@@ -25,17 +25,32 @@ final class TextWithSummaryFlattener implements CouchDBSyncFlattenerInterface {
     if (isset($entity_wrapper->{$field_name}) && !is_null($entity_wrapper->{$field_name}->value())) {
       $raw_value = $entity_wrapper->{$field_name}->value();
 
-      // TODO: Implement multiple value handling.
+      if ($multiple !== FALSE) {
+        return array_map(array($this, 'parseValue'), $raw_value);
+      }
 
-      // Just return the safe values.
-      return array(
-        'summary' => $raw_value['safe_summary'],
-        'value' => $raw_value['safe_value'],
-      );
+      return $this->parseValue($raw_value);
     }
     else {
       return FALSE;
     }
+  }
+
+
+  /**
+   * Parse a single field value into the desired format.
+   *
+   * @param array $value
+   *   The raw value of the field.
+   *
+   * @return array
+   *   Parsed field value array.
+   */
+  protected function parseValue($value) {
+    return array(
+      'summary' => $value['safe_summary'],
+      'value' => $value['safe_value'],
+    );
   }
 
 }
