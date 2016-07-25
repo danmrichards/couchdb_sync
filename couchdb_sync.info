@@ -10,4 +10,6 @@ dependencies[] = field
 
 files[] = includes/CouchDBSyncException.inc
 files[] = includes/CouchDBSyncFlattener.interface.inc
-files[] = tests/couchdb_sync.test
+files[] = tests/CouchDBSyncBase.test
+files[] = tests/CouchDBSyncCrudTest.test
+files[] = tests/CouchDBSyncPluginTest.test

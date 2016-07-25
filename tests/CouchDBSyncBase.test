@@ -1,0 +1,81 @@
+<?php
+
+/**
+ * @file
+ * Contains CouchDBSyncBase.
+ */
+
+/**
+ * Defines a base class for testing the CouchDB Sync module.
+ */
+abstract class CouchDBSyncBase extends DrupalWebTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected $profile = 'testing';
+
+  /**
+   * Initialise the CouchDB connection details.
+   */
+  protected function init() {
+    include DRUPAL_ROOT . '/' . conf_path() . '/settings.php';
+
+    // Setup connection variables.
+    $settings = array(
+      'base_url' => (isset($conf['couchdb']['base_url'])) ? $conf['couchdb']['base_url'] : '',
+      'http_auth' => (isset($conf['couchdb']['http_auth'])) ? $conf['couchdb']['http_auth'] : '',
+      'cookie_jar' => (isset($conf['couchdb']['cookie_jar'])) ? $conf['couchdb']['cookie_jar'] : '',
+    );
+
+    variable_set('couchdb', $settings);
+
+    // Set an override database name.
+    variable_set('couchdb_sync_database_name', 'couchdb_sync_simpletest_db');
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp() {
+    parent::setUp();
+
+    // Check the CouchDB connection is working.
+    try {
+      // Setup variables.
+      $this->init();
+
+      // Make sure CouchDB Sync is enabled.
+      $modules_enabled = module_enable(array('couchdb_sync'), TRUE);
+      $this->assertTrue($modules_enabled, t('Enabled CouchDB Sync'));
+
+      // Try the connection.
+      $couch = new CouchDB();
+
+      // Create a test content type for us to use.
+      $this->drupalCreateContentType(array('type' => 'couchdb_sync_test_content', 'name' => 'CouchDB Sync Test Content'));
+
+      // We're done!
+      $this->setup = TRUE;
+    }
+    catch (CouchDBException $e) {
+      // Throw error.
+      $this->error($e->getMessage());
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown() {
+    // Setup variables.
+    $this->init();
+
+    // Delete the test database.
+    $couch = new CouchDB();
+    $couch->deleteDatabase(couchdb_sync_get_database_name());
+
+    parent::tearDown();
+  }
+
+}

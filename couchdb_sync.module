@@ -526,7 +526,16 @@ function _couchdb_sync_flatten_entity($type, $entity, $reset = FALSE) {
   // Get the entity identifier.
   $entity_id = $entity_wrapper->getIdentifier();
 
+  // Build the cache index.
   $flat_entity_index = $type . ':' . $entity_id;
+
+  // Check for a revision token and append if present.
+  $rev = couchdb_sync_get_entity_couchdb_rev($type, $entity_id);
+
+  // Append the revision token if present.
+  if (FALSE !== $rev) {
+    $flat_entity_index .= ':' . $rev;
+  }
 
   // Return the statically cached entity if present.
   if (isset($flat_entities[$flat_entity_index]) && !$reset) {
@@ -579,8 +588,8 @@ function _couchdb_sync_flatten_entity($type, $entity, $reset = FALSE) {
     }
   }
 
-  // Check for a revision token and append if present.
-  if ($rev = couchdb_sync_get_entity_couchdb_rev($type, $entity_wrapper->getIdentifier())) {
+  // Add the revision token to the flat entity if present.
+  if (FALSE !== $rev) {
     $flat_entity->_rev = $rev;
   }
 

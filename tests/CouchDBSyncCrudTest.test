@@ -2,22 +2,18 @@
 
 /**
  * @file
- * Tests for the CouchDB Sync module.
+ * Contains CouchDBSyncCrudTest.
  */
 
 /**
- * Defines a base class for testing the CouchDB Sync module.
+ * Defines a test class for testing the CouchDB Sync CRUD actions.
  */
-class CouchDBSyncTestCase extends DrupalWebTestCase {
+class CouchDBSyncCrudTest extends CouchDBSyncBase {
 
   // TODO: Refactor tests to work for all enabled entity types, not just nodes.
 
   // TODO: Add unit tests to ensure that entities not ready for push (e.g. a
   // node that is unpublished) do not get sent to CouchDB.
-
-  // TODO: Add unit tests to plugin API: valid plugin, invalid plugin.
-
-  // TODO: Add unit tests for all core field type plugins.
 
   /**
    * {@inheritdoc}
@@ -28,55 +24,6 @@ class CouchDBSyncTestCase extends DrupalWebTestCase {
       'description' => 'Tests the CouchDB Sync module.',
       'group' => 'CouchDB',
     );
-  }
-
-  /**
-   * Initialise the CouchDB connection details.
-   */
-  private function init() {
-    include DRUPAL_ROOT . '/' . conf_path() . '/settings.php';
-
-    // Setup connection variables.
-    $settings = array(
-      'base_url' => (isset($conf['couchdb']['base_url'])) ? $conf['couchdb']['base_url'] : '',
-      'http_auth' => (isset($conf['couchdb']['http_auth'])) ? $conf['couchdb']['http_auth'] : '',
-      'cookie_jar' => (isset($conf['couchdb']['cookie_jar'])) ? $conf['couchdb']['cookie_jar'] : '',
-    );
-
-    variable_set('couchdb', $settings);
-
-    // Set an override database name.
-    variable_set('couchdb_sync_database_name', 'couchdb_sync_simpletest_db');
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function setUp() {
-    parent::setUp();
-
-    // Check the CouchDB connection is working.
-    try {
-      // Setup variables.
-      $this->init();
-
-      // Make sure CouchDB Sync is enabled.
-      $modules_enabled = module_enable(array('couchdb_sync'), TRUE);
-      $this->assertTrue($modules_enabled, t('Enabled CouchDB Sync'));
-
-      // Try the connection.
-      $couch = new CouchDB();
-
-      // Create a test content type for us to use.
-      $this->drupalCreateContentType(array('type' => 'couchdb_sync_test_content', 'name' => 'CouchDB Sync Test Content'));
-
-      // We're done!
-      $this->setup = TRUE;
-    }
-    catch (CouchDBException $e) {
-      // Throw error.
-      $this->error($e->getMessage());
-    }
   }
 
   /**
@@ -125,7 +72,7 @@ class CouchDBSyncTestCase extends DrupalWebTestCase {
     $this->assertEqual($couchdb_node_document->id, $test_node->nid, 'Document with matching ID exists in CouchDB');
 
     // Check the document body contains the expected string.
-    $this->drupalSetContent($couchdb_node_document->body);
+    $this->drupalSetContent(is_object($couchdb_node_document->body) ? $couchdb_node_document->body->value : $couchdb_node_document->body);
     $this->assertPattern('|This is a CouchDB document|', 'CouchDB document contains expected string in body.');
 
     // Check the revision token matches.
@@ -239,20 +186,6 @@ class CouchDBSyncTestCase extends DrupalWebTestCase {
 
     // Check the document was deleted.
     $this->assertFalse($couchdb_deleted_node_document, 'Document was marked as deleted in CouchDB');
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  protected function tearDown() {
-    // Setup variables.
-    $this->init();
-
-    // Delete the test database.
-    $couch = new CouchDB();
-    $couch->deleteDatabase(couchdb_sync_get_database_name());
-
-    parent::tearDown();
   }
 
 }
