@@ -20,9 +20,9 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
    */
   public static function getInfo() {
     return array(
-      'name' => 'CouchDB Sync Unit Tests',
-      'description' => 'Tests the CouchDB Sync module.',
-      'group' => 'CouchDB',
+      'name' => 'CRUD tests',
+      'description' => 'Tests CRUD integration with CouchDB.',
+      'group' => 'CouchDB Sync',
     );
   }
 

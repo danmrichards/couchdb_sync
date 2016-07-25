@@ -1,0 +1,6 @@
+name = CouchDB Sync Example
+description = Provides example flattener plugins for CouchDB Sync. Intended for unit testing purposes.
+package = Couchdb
+core = 7.x
+
+dependencies[] = couchdb_sync

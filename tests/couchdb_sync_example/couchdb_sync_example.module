@@ -1,0 +1,41 @@
+<?php
+
+/**
+ * @file
+ * Main hooks and functionality for the CouchDB Sync Example module.
+ */
+
+/**
+ * Implements hook_ctools_plugin_api().
+ */
+function couchdb_sync_example_ctools_plugin_api($owner, $api) {
+  if ($owner == 'couchdb_sync' && $api == 'plugins') {
+    return array('version' => 1);
+  }
+}
+
+/**
+ * Implements hook_couchdb_sync_flatteners().
+ */
+function couchdb_sync_example_couchdb_sync_flatteners() {
+  return array(
+    'MooTextFlattener' => array(
+      'name' => 'Moo Text Flattener plugin',
+      'description' => 'Flattener plugin replacing all text field values with a friendly moo!',
+      'handler' => array(
+        'class' => 'MooTextFlattener',
+        'file' => 'MooTextFlattener.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync_example') . '/plugins',
+      ),
+    ),
+    'BrokenFlattener' => array(
+      'name' => 'Broken Flattener plugin',
+      'description' => 'Flattener plugin which flat out does not work.',
+      'handler' => array(
+        'class' => 'BrokenFlattener',
+        'file' => 'BrokenFlattener.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync_example') . '/plugins',
+      ),
+    ),
+  );
+}

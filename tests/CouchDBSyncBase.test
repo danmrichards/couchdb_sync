@@ -46,8 +46,13 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
       $this->init();
 
       // Make sure CouchDB Sync is enabled.
-      $modules_enabled = module_enable(array('couchdb_sync'), TRUE);
+      $modules_enabled = module_enable(array('couchdb_sync', 'couchdb_sync_example'), TRUE);
       $this->assertTrue($modules_enabled, t('Enabled CouchDB Sync'));
+
+      // Reset/rebuild all data structures after enabling the modules. For
+      // some reason we need to do this twice to get the plugins to register.
+      $this->resetAll();
+      $this->resetAll();
 
       // Try the connection.
       $couch = new CouchDB();

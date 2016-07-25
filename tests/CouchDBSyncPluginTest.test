@@ -8,10 +8,48 @@
 /**
  * Defines a class for testing CouchDB Sync plugins.
  */
-class CouchDBSyncPluginTest extends DrupalWebTestCase {
+class CouchDBSyncPluginTest extends CouchDBSyncBase {
 
-  // TODO: Add unit tests to plugin API: valid plugin, invalid plugin.
+  /**
+   * Name of a valid flattener plugin.
+   *
+   * @var string
+   */
+  protected $validPlugin = 'MooTextFlattener';
+
+  /**
+   * Name of a invalid flattener plugin.
+   *
+   * @var string
+   */
+  protected $invalidPlugin = 'BrokenFlattener';
 
   // TODO: Add unit tests for all core field type plugins.
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getInfo() {
+    return array(
+      'name' => 'Plugin tests',
+      'description' => 'Tests the plugin architecture provided by CouchDB Sync.',
+      'group' => 'CouchDB Sync',
+    );
+  }
+
+  /**
+   * Test the plugin validity.
+   */
+  public function testPluginValidity() {
+    // Get the list of plugins.
+    module_load_include('inc', 'couchdb_sync', 'couchdb_sync.flatteners');
+    $plugins = couchdb_sync_get_flattener_plugins();
+
+    // Check the valid plugin is present.
+    $this->assertTrue(in_array($this->validPlugin, array_keys($plugins)), t('Valid plugin is present.'));
+
+    // Check the valid plugin is present.
+    $this->assertFalse(in_array($this->invalidPlugin, array_keys($plugins)), t('Invalid plugin is not present.'));
+  }
 
 }
