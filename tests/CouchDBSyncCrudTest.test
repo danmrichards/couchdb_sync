@@ -130,7 +130,8 @@ class CouchDBSyncCrudTest extends CouchDBSyncBase {
     // Save the node.
     node_save($updated_node);
 
-    // TODO: Implement new ctools plugin, processor, to handle how entities are pushed. 2 defaults: cron queue or immediately.
+    // TODO: Implement new ctools plugin, processor, to handle how entities are
+    // pushed. 2 defaults: cron queue or immediately.
     // Run the system cron.
     drupal_cron_run();
 

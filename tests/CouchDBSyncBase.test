@@ -16,6 +16,30 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
   protected $profile = 'standard';
 
   /**
+   * Settings for our test content type.
+   *
+   * @var array
+   */
+  protected $testContentType = array(
+    'machine_name' => 'couchdb_sync_test_content',
+    'name' => 'CouchDB Sync Test Content',
+  );
+
+  /**
+   * The path to an example file.
+   *
+   * @var string
+   */
+  protected $exampleFilePath;
+
+  /**
+   * The path to an example image.
+   *
+   * @var string
+   */
+  protected $exampleImagePath;
+
+  /**
    * Initialise the CouchDB connection details.
    */
   protected function init() {
@@ -32,6 +56,10 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
 
     // Set an override database name.
     variable_set('couchdb_sync_database_name', 'couchdb_sync_simpletest_db');
+
+    // Set the example file an image paths.
+    $this->exampleFilePath = drupal_get_path('module', 'couchdb_sync_example') . '/example_file.txt';
+    $this->exampleImagePath = drupal_get_path('module', 'couchdb_sync_example') . '/example_image.png';
   }
 
   /**
@@ -58,8 +86,8 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
       $couch = new CouchDB();
 
       // Create a test content type for us to use.
-      $this->drupalCreateContentType(array('type' => 'couchdb_sync_test_content', 'name' => 'CouchDB Sync Test Content'));
-      $this->createAttachFields('node', 'couchdb_sync_test_content');
+      $this->drupalCreateContentType(array('type' => $this->testContentType['machine_name'], 'name' => $this->testContentType['name']));
+      $this->createAttachFields('node', $this->testContentType['machine_name']);
 
       // We're done!
       $this->setup = TRUE;
@@ -785,6 +813,201 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
   }
 
   /**
+   * Settings to create an example node.
+   *
+   * @return array
+   *   Array of node settings and field values.
+   *
+   * @see drupalCreateNode
+   */
+  protected function getExampleNodeSettings() {
+    // Upload an example file.
+    $example_file = new stdClass();
+    $example_file->uid = 1;
+    $example_file->uri = $this->exampleFilePath;
+    $example_file->filemime = file_get_mimetype($this->exampleFilePath);
+
+    // Copy the file to the public directory.
+    $example_file = file_copy($example_file, 'public://example_file.txt');
+
+    // Create an example taxonomy term.
+    $term = (object) array(
+      'name' => 'Tag 1',
+      'description' => 'Tag 1',
+      // Use the first available text format.
+      'format' => db_query_range('SELECT format FROM {filter_format}', 0, 1)->fetchField(),
+      'vid' => taxonomy_vocabulary_machine_name_load('tags')->vid,
+      'vocabulary_machine_name' => 'tags',
+    );
+    taxonomy_term_save($term);
+
+    // Upload an example image.
+    $example_image = new stdClass();
+    $example_image->uid = 1;
+    $example_image->uri = $this->exampleImagePath;
+    $example_image->filemime = file_get_mimetype($this->exampleImagePath);
+
+    // Copy the file to the public directory.
+    $example_image = file_copy($example_image, 'public://example_image.png');
+
+    return array(
+      'type' => $this->testContentType['machine_name'],
+      'title' => 'This is an example node',
+      'body' => array(
+        LANGUAGE_NONE => array(
+          array(
+            'summary' => '',
+            'value' => 'This is the example body',
+            'safe_summary' => '',
+            'safe_value' => 'This is the example body',
+          ),
+        ),
+      ),
+      'field_boolean' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 1),
+        ),
+      ),
+      'field_decimal' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 1.23),
+          array('value' => 2.34),
+        ),
+      ),
+      'field_file' => array(
+        LANGUAGE_NONE => array(
+          array(
+            'fid' => $example_file->fid,
+            'filename' => $example_file->filename,
+            'filemime' => $example_file->filemime,
+            'filesize' => filesize($this->exampleFilePath),
+            'description' => '',
+            'uid' => 1,
+            'uri' => $example_file->uri,
+            'status' => 1,
+            'display' => 1,
+          ),
+        ),
+      ),
+      'field_float' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 1.11),
+          array('value' => 2.22),
+        ),
+      ),
+      'field_integer' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 4),
+          array('value' => 5),
+        ),
+      ),
+      'field_list_float' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 1),
+        ),
+      ),
+      'field_list_integer' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 1),
+        ),
+      ),
+      'field_long_text' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 'The first piece of long text'),
+          array('value' => 'The second piece of long text'),
+        ),
+      ),
+      'field_term_reference' => array(
+        LANGUAGE_NONE => array(
+          array('tid' => $term->tid),
+        ),
+      ),
+      'field_text' => array(
+        LANGUAGE_NONE => array(
+          array('value' => 'This is some text'),
+        ),
+      ),
+      'field_image' => array(
+        LANGUAGE_NONE => array(
+          array(
+            'fid' => $example_image->fid,
+            'filename' => $example_image->filename,
+            'filemime' => $example_image->filemime,
+            'filesize' => filesize($this->exampleImagePath),
+            'uid' => 1,
+            'uri' => $example_image->uri,
+            'status' => 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Expected values for flattened fields.
+   *
+   * @return array
+   *   An array of expected flattened values in the format field_name => value.
+   */
+  protected function getExpectedFlatFields() {
+    // Get info on the example image.
+    $image_info = image_get_info('public://' . basename($this->exampleImagePath));
+
+    // Example taxonomy term.
+    $taxonomy_term = new stdClass();
+    $taxonomy_term->id = 1;
+    $taxonomy_term->type = 'taxonomy_term';
+    $taxonomy_term->title = 'Tag 1';
+    $taxonomy_term->alias = 'taxonomy_term/1';
+
+    return array(
+      'title' => 'This is an example node',
+      'body' => array(
+        'summary' => '',
+        'value' => 'This is the example body',
+      ),
+      'field_boolean' => 1,
+      'field_decimal' => array(
+        1.23,
+        2.34,
+      ),
+      'field_file' => array(
+        array(
+          'src' => file_create_url('public://' . basename($this->exampleFilePath)),
+          'filemime' => file_get_mimetype($this->exampleFilePath),
+          'filesize' => filesize($this->exampleFilePath),
+          'description' => '',
+        ),
+      ),
+      'field_float' => array(
+        1.11,
+        2.22,
+      ),
+      'field_integer' => array(
+        4,
+        5,
+      ),
+      'field_list_float' => array('two'),
+      'field_list_integer' => array('five'),
+      'field_long_text' => array(
+        'The first piece of long text',
+        'The second piece of long text',
+      ),
+      'field_term_reference' => array(
+        $taxonomy_term,
+      ),
+      'field_text' => array('Moo!'),
+      'field_image' => array(
+        'src' => file_create_url('public://' . basename($this->exampleImagePath)),
+        'filemime' => file_get_mimetype($this->exampleImagePath),
+        'filesize' => filesize($this->exampleImagePath),
+        'width' => $image_info['width'],
+        'height' => $image_info['height'],
+      ),
+    );
+  }
+
+  /**
    * {@inheritdoc}
    */
   protected function tearDown() {
@@ -794,6 +1017,9 @@ abstract class CouchDBSyncBase extends DrupalWebTestCase {
     // Delete the test database.
     $couch = new CouchDB();
     $couch->deleteDatabase(couchdb_sync_get_database_name());
+
+    // Reset the database name.
+    variable_del('couchdb_sync_database_name');
 
     parent::tearDown();
   }

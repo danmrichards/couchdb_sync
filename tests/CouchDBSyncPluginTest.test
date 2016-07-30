@@ -54,15 +54,19 @@ class CouchDBSyncPluginTest extends CouchDBSyncBase {
    * Test the functionality of the core field type flatteners.
    */
   public function testCoreFieldFlatteners() {
-    // TODO: Create a test node.
+    // Create a test node.
     $test_node = $this->drupalCreateNode($this->getExampleNodeSettings());
 
-    // TODO: Get the flattened version of the test node.
+    // Get the flattened version of the test node.
     $flattened_test_node = _couchdb_sync_flatten_entity('node', $test_node);
 
-    // TODO: Check each of the fields has been flattened correctly.
+    // Unset the image styles from the image field. We can't test equality on
+    // them due to the random itok value being appended.
+    unset($flattened_test_node->field_image['image_styles']);
+
+    // Check each of the fields has been flattened correctly.
     foreach ($this->getExpectedFlatFields() as $field_name => $flat_field) {
-      $this->assertEqual($flat_field, $flattened_test_node->{$flat_field}, t('Field (@field_name) flattened correctly', array('@field_name' => $field_name)));
+      $this->assertEqual($flat_field, $flattened_test_node->{$field_name}, t('Field (@field_name) flattened correctly.', array('@field_name' => $field_name)));
     }
   }
 
