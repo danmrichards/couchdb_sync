@@ -69,7 +69,7 @@ function couchdb_sync_get_flatteners_by_type($reset = FALSE) {
   // Loop through available flatteners.
   foreach (couchdb_sync_get_flattener_plugins() as $name => $plugin) {
     // Get the plugin object.
-    $plugin_object = _couchdb_sync_load_flattener_object('flatteners', $name);
+    $plugin_object = _couchdb_sync_load_plugin_object('flatteners', $name);
 
     // Get the field type the plugin supports.
     $plugin_field_type = $plugin_object->getSupportedFieldType();
@@ -123,7 +123,7 @@ function couchdb_sync_get_field_type_flattener($field_type, $reset = FALSE) {
   $flattener_plugin_name = !empty($flatteners_by_type[$field_type]) ? $flatteners_by_type[$field_type] : $flatteners_by_type[COUCHDB_SYNC_GENERIC_FIELD_INDICATOR];
 
   // Load the plugin object.
-  $flattener[$field_type] = _couchdb_sync_load_flattener_object('flatteners', $flattener_plugin_name);
+  $flattener[$field_type] = _couchdb_sync_load_plugin_object('flatteners', $flattener_plugin_name);
 
   return $flattener[$field_type];
 }
@@ -140,22 +140,4 @@ function couchdb_sync_get_field_type_flattener($field_type, $reset = FALSE) {
 function _couchdb_sync_validate_flattener_plugin($id) {
   $class_name = ctools_plugin_load_class('couchdb_sync', 'flatteners', $id, 'handler');
   return !is_null($class_name) && class_implements($class_name, CouchDBSyncFlattenerInterface::class);
-}
-
-/**
- * Load the class for a given plugin.
- *
- * @param string $type
- *   Type of plugin we're loading.
- * @param string $name
- *   Name of the CTools plugin to load.
- *
- * @return mixed
- *   An instantiated plugin object or FALSE if it could not be instantiated.
- */
-function _couchdb_sync_load_flattener_object($type, $name) {
-  ctools_include('plugins');
-  $class_name = ctools_plugin_load_class('couchdb_sync', $type, $name, 'handler');
-
-  return (!is_null($class_name) && class_exists($class_name)) ? new $class_name() : FALSE;
 }

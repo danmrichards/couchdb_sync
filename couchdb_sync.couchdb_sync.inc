@@ -75,3 +75,21 @@ function couchdb_sync_couchdb_sync_flatteners() {
     ),
   );
 }
+
+/**
+ * Implements hook_couchdb_sync_processors().
+ */
+function couchdb_sync_couchdb_sync_processors() {
+  return array(
+    'QueueProcessor' => array(
+      'name' => 'Queue',
+      'description' => 'Processes entities into a queue. Each queue item is then pushed to CouchDB one-by-one.',
+      'handler' => array(
+        'class' => 'QueueProcessor',
+        'file' => 'QueueProcessor.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
+      ),
+    ),
+    // TODO: Add new processor plugin to sync entities immediately.
+  );
+}

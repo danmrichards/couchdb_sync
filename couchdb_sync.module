@@ -6,8 +6,7 @@
  */
 
 define('COUCHDB_SYNC_GENERIC_FIELD_INDICATOR', '*');
-
-// TODO: Implement an admin UI for entity enablement, push mode etc.
+define('COUCHDB_SYNC_ENTITY_QUEUE', 'couchdb_sync_push_entity');
 
 /**
  * Implements hook_help().
@@ -19,7 +18,43 @@ function couchdb_sync_help($path, $arg) {
       $output .= '<p>' . t('Provides a mechanism for syncing entities to CouchDB. Field values are flattened via a CTools plugin API.') . '<p>';
 
       return $output;
+
+    case 'admin/config/services/couchdb-sync':
+      $output = '<p>' . t('From this page you can configure what content is synced to Couch DB and the method in which it is synced.') . '<p>';
+
+      return $output;
   }
+}
+
+/**
+ * Implements hook_menu().
+ */
+function couchdb_sync_menu() {
+  $items = array();
+
+  $items['admin/config/services/couchdb-sync'] = array(
+    'title' => 'CouchDB Sync',
+    'description' => 'Configure CouchDB Sync.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('couchdb_sync_config_form'),
+    'access arguments' => array('administer couchdb_sync'),
+    'file' => 'includes/couchdb_sync.admin.inc',
+    'weight' => -10,
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function couchdb_sync_permission() {
+  return array(
+    'administer couchdb_sync' => array(
+      'title' => t('Administer CouchDB Sync'),
+      'description' => t('Manage the settings for CouchDB Sync.'),
+    ),
+  );
 }
 
 /**
@@ -27,6 +62,10 @@ function couchdb_sync_help($path, $arg) {
  */
 function couchdb_sync_hook_info() {
   $hooks['couchdb_sync_flatteners'] = array(
+    'group' => 'couchdb_sync',
+  );
+
+  $hooks['couchdb_sync_processors'] = array(
     'group' => 'couchdb_sync',
   );
 
@@ -39,7 +78,7 @@ function couchdb_sync_hook_info() {
 function couchdb_sync_cron_queue_info() {
   $queues = array();
 
-  $queues['couchdb_sync_push_entity'] = array(
+  $queues[COUCHDB_SYNC_ENTITY_QUEUE] = array(
     'worker callback' => 'couchdb_sync_push_entity_worker',
     'time' => 60,
     'skip on cron' => FALSE,
@@ -105,6 +144,11 @@ function couchdb_sync_ctools_plugin_type() {
       'use hooks' => TRUE,
       'classes' => array('handler'),
     ),
+    'processors' => array(
+      'cache' => TRUE,
+      'use hooks' => TRUE,
+      'classes' => array('handler'),
+    ),
   );
 }
 
@@ -121,9 +165,16 @@ function couchdb_sync_entity_insert($entity, $type) {
   // be pushed if they are unpublished.
   if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
     // Push the entity to the queue.
-    // TODO: Implement new ctools plugin, processor, to handle how entities are
-    // pushed. 2 defaults: cron queue or immediately.
-    _couchdb_sync_create_queue_item($entity, $type, 'insert');
+    try {
+      // TODO: Check config option to push immediately instead of using queue.
+      // Load the processor and process the entity.
+      module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
+      $processor = couchdb_sync_get_processor_plugin();
+      $processor->process($entity, $type, 'insert');
+    }
+    catch (CouchDBSyncException $e) {
+      watchdog_exception('couchdb_sync', $e);
+    }
   }
 }
 
@@ -140,8 +191,16 @@ function couchdb_sync_entity_update($entity, $type) {
   // be pushed if they are unpublished.
   if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
     // Push the entity to the queue.
-    // TODO: Check config option to push immediately instead of using queue.
-    _couchdb_sync_create_queue_item($entity, $type, 'update');
+    try {
+      // TODO: Check config option to push immediately instead of using queue.
+      // Load the processor and process the entity.
+      module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
+      $processor = couchdb_sync_get_processor_plugin();
+      $processor->process($entity, $type, 'update');
+    }
+    catch (CouchDBSyncException $e) {
+      watchdog_exception('couchdb_sync', $e);
+    }
   }
 }
 
@@ -153,8 +212,16 @@ function couchdb_sync_entity_delete($entity, $type) {
   // push to CouchDB. For now lets just use nodes.
   if ($type == 'node') {
     // Push the entity to the queue.
-    // TODO: Check config option to push immediately instead of using queue.
-    _couchdb_sync_create_queue_item($entity, $type, 'delete');
+    try {
+      // TODO: Check config option to push immediately instead of using queue.
+      // Load the processor and process the entity.
+      module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
+      $processor = couchdb_sync_get_processor_plugin();
+      $processor->process($entity, $type, 'delete');
+    }
+    catch (CouchDBSyncException $e) {
+      watchdog_exception('couchdb_sync', $e);
+    }
   }
 }
 
@@ -468,41 +535,6 @@ function couchdb_sync_get_entity_field_value(EntityMetadataWrapper $entity_wrapp
 }
 
 /**
- * Push an entity into the CouchDB queue.
- *
- * @param object $entity
- *   The entity object.
- * @param string $type
- *   The type of entity being saved (i.e. node, user, comment).
- * @param string $op
- *   The operation that needs to be performed in CouchDB.
- */
-function _couchdb_sync_create_queue_item($entity, $type, $op) {
-  // Get the entity info.
-  list($id, $vid) = entity_extract_ids($type, $entity);
-
-  // Build the queue item.
-  $queue_item = array(
-    'id' => $id,
-    'vid' => $vid,
-    'type' => $type,
-    'op' => $op,
-  );
-
-  // Load the CouchDB Sync.
-  $queue = DrupalQueue::get('couchdb_sync_push_entity');
-
-  // Push the item into the queue and check it was successful.
-  if (!$queue->createItem($queue_item)) {
-    watchdog('couchdb_sync', 'Could not push %type entity with an ID of %id to the CouchDB queue for the following operation: %op', array(
-      '%type' => $type,
-      '%id' => $id,
-      '%op' => $op,
-    ), WATCHDOG_ERROR);
-  }
-}
-
-/**
  * Flatten a Drupal entity for storage in CouchDB.
  *
  * @param string $type
@@ -596,4 +628,22 @@ function _couchdb_sync_flatten_entity($type, $entity, $reset = FALSE) {
 
   $flat_entities[$flat_entity_index] = $flat_entity;
   return $flat_entities[$flat_entity_index];
+}
+
+/**
+ * Load the class for a given plugin.
+ *
+ * @param string $type
+ *   Type of plugin we're loading.
+ * @param string $name
+ *   Name of the CTools plugin to load.
+ *
+ * @return mixed
+ *   An instantiated plugin object or FALSE if it could not be instantiated.
+ */
+function _couchdb_sync_load_plugin_object($type, $name) {
+  ctools_include('plugins');
+  $class_name = ctools_plugin_load_class('couchdb_sync', $type, $name, 'handler');
+
+  return (!is_null($class_name) && class_exists($class_name)) ? new $class_name() : FALSE;
 }

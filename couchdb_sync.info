@@ -3,6 +3,8 @@ description = Provides a mechanism for syncing entities to CouchDB.
 package = Couchdb
 core = 7.x
 
+configure = admin/config/services/couchdb-sync
+
 dependencies[] = couchdb
 dependencies[] = ctools
 dependencies[] = entity
@@ -10,6 +12,7 @@ dependencies[] = field
 
 files[] = includes/CouchDBSyncException.inc
 files[] = includes/CouchDBSyncFlattener.interface.inc
+files[] = includes/CouchDBSyncProcessor.interface.inc
 files[] = tests/CouchDBSyncBase.test
 files[] = tests/CouchDBSyncCrudTest.test
 files[] = tests/CouchDBSyncPluginTest.test
