@@ -83,13 +83,21 @@ function couchdb_sync_couchdb_sync_processors() {
   return array(
     'QueueProcessor' => array(
       'name' => 'Queue',
-      'description' => 'Processes entities into a queue. Each queue item is then pushed to CouchDB one-by-one.',
+      'description' => 'Processes entities into a queue. Each queue item is then pushed to CouchDB one-by-one at the next cron run.',
       'handler' => array(
         'class' => 'QueueProcessor',
         'file' => 'QueueProcessor.inc',
         'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
       ),
     ),
-    // TODO: Add new processor plugin to sync entities immediately.
+    'BatchProcessor' => array(
+      'name' => 'Batch',
+      'description' => 'Processes entities and syncs them to CouchDB using Drupal batches. Entities will be processed when created/updated.',
+      'handler' => array(
+        'class' => 'BatchProcessor',
+        'file' => 'BatchProcessor.inc',
+        'path' => drupal_get_path('module', 'couchdb_sync') . '/plugins',
+      ),
+    ),
   );
 }

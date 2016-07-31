@@ -41,11 +41,33 @@ function couchdb_sync_config_form($form, &$form_state) {
     '#description' => t('Select how entities are going to be synced to CouchDB'),
     '#options' => $processor_options,
     '#default_value' => $default_processor,
+    '#ajax' => array(
+      'callback' => 'couchdb_sync_processor_callback',
+      'wrapper' => 'couchdb-sync-processor-description',
+    ),
   );
 
+  // Determine the processor description.
+  if (isset($form_state['values']['couchdb_sync_processor']) && !empty($processors[$form_state['values']['couchdb_sync_processor']]['description'])) {
+    $description = $processors[$form_state['values']['couchdb_sync_processor']]['description'];
+  }
+  else {
+    $description = $processors[$default_processor]['description'];
+  }
+
   $form['couchdb_sync_processor_description'] = array(
-    '#markup' => t('The selected sync mode has the following description: %description', array('%description' => $processors[$default_processor]['description'])),
+    '#type' => 'markup',
+    '#prefix' => '<div id="couchdb-sync-processor-description">',
+    '#suffix' => '</div>',
+    '#markup' => t('The selected sync mode has the following description: %description', array('%description' => $description)),
   );
 
   return system_settings_form($form);
+}
+
+/**
+ * Form AJAX callback: Update the selected processor description.
+ */
+function couchdb_sync_processor_callback($form, $form_state) {
+  return $form['couchdb_sync_processor_description'];
 }

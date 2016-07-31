@@ -79,7 +79,7 @@ function couchdb_sync_cron_queue_info() {
   $queues = array();
 
   $queues[COUCHDB_SYNC_ENTITY_QUEUE] = array(
-    'worker callback' => 'couchdb_sync_push_entity_worker',
+    'worker callback' => 'couchdb_sync_push_entity',
     'time' => 60,
     'skip on cron' => FALSE,
   );
@@ -88,9 +88,9 @@ function couchdb_sync_cron_queue_info() {
 }
 
 /**
- * Cron queue worker: Push an entity into CouchDB.
+ * Push an entity into CouchDB.
  *
- * @param array $queue_item
+ * @param array $source_entity
  *   An array describing the entity to push to CouchDB. Expected format:
  *     array(
  *       'id' => The Drupal ID of the entity.
@@ -99,36 +99,36 @@ function couchdb_sync_cron_queue_info() {
  *       'op' => The operation to perform ('insert', 'update,' 'delete').
  *     ).
  */
-function couchdb_sync_push_entity_worker(array $queue_item) {
-  // Check we valid queue item data.
-  if (isset($queue_item['id']) && isset($queue_item['vid']) && isset($queue_item['type']) && isset($queue_item['op'])) {
+function couchdb_sync_push_entity(array $source_entity) {
+  // Check we have valid source entity data.
+  if (isset($source_entity['id']) && isset($source_entity['vid']) && isset($source_entity['type']) && isset($source_entity['op'])) {
     // Determine the action to take based on the operation value.
-    switch ($queue_item['op']) {
+    switch ($source_entity['op']) {
       case 'insert':
       case 'update':
         // Load the entity.
-        $entity = entity_revision_load($queue_item['type'], $queue_item['vid']);
+        $entity = entity_revision_load($source_entity['type'], $source_entity['vid']);
 
         // If this is an update, allow for the fact that the entity may have
         // been created before this module existed. If we have no revision
         // token, do an insert instead.
-        if (!couchdb_sync_get_entity_couchdb_rev($queue_item['type'], $queue_item['id'])) {
-          $queue_item['op'] = 'insert';
+        if (!couchdb_sync_get_entity_couchdb_rev($source_entity['type'], $source_entity['id'])) {
+          $source_entity['op'] = 'insert';
         }
 
         // Get the flattened version of the entity.
-        $flat_entity = _couchdb_sync_flatten_entity($queue_item['type'], $entity);
+        $flat_entity = _couchdb_sync_flatten_entity($source_entity['type'], $entity);
 
         // Build the callback function name.
-        $callback = 'couchdb_sync_' . $queue_item['op'] . '_document';
+        $callback = 'couchdb_sync_' . $source_entity['op'] . '_document';
 
         // Run the callback function.
-        call_user_func($callback, $queue_item['type'], $flat_entity);
+        call_user_func($callback, $source_entity['type'], $flat_entity);
 
         break;
 
       case 'delete':
-        couchdb_sync_delete_document($queue_item['type'], $queue_item['id']);
+        couchdb_sync_delete_document($source_entity['type'], $source_entity['id']);
         break;
     }
   }
@@ -164,9 +164,8 @@ function couchdb_sync_entity_insert($entity, $type) {
   // i.e. Should the entity be pushed to CouchDB? For example nodes should not
   // be pushed if they are unpublished.
   if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
-    // Push the entity to the queue.
+    // Sync the entity.
     try {
-      // TODO: Check config option to push immediately instead of using queue.
       // Load the processor and process the entity.
       module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
       $processor = couchdb_sync_get_processor_plugin();
@@ -190,9 +189,8 @@ function couchdb_sync_entity_update($entity, $type) {
   // i.e. Should the entity be pushed to CouchDB? For example nodes should not
   // be pushed if they are unpublished.
   if ($type == 'node' && $entity->status == NODE_PUBLISHED) {
-    // Push the entity to the queue.
+    // Sync the entity.
     try {
-      // TODO: Check config option to push immediately instead of using queue.
       // Load the processor and process the entity.
       module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
       $processor = couchdb_sync_get_processor_plugin();
@@ -211,9 +209,8 @@ function couchdb_sync_entity_delete($entity, $type) {
   // TODO: Perform additional checking against list of enabled entities for
   // push to CouchDB. For now lets just use nodes.
   if ($type == 'node') {
-    // Push the entity to the queue.
+    // Sync the entity.
     try {
-      // TODO: Check config option to push immediately instead of using queue.
       // Load the processor and process the entity.
       module_load_include('inc', 'couchdb_sync', 'couchdb_sync.processors');
       $processor = couchdb_sync_get_processor_plugin();
